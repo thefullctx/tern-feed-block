@@ -1,0 +1,5 @@
+# feed-block in Tern: the seeded feed, light and dark
+ready
+run "uv run feed"
+wait 2500
+shot feed

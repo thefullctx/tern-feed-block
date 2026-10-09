@@ -1,0 +1,14 @@
+#!/bin/sh
+# feed-block managed hook: posts the merge you just completed to the local feed.
+# Installed by `feed --install`; remove it with `feed hook install --uninstall`.
+# FEED_BLOCK=0 skips. The feed command is the one that installed this hook;
+# FEED_BLOCK_BIN overrides it when the feed lives elsewhere.
+[ "${FEED_BLOCK:-1}" = "0" ] && exit 0
+if [ -n "${FEED_BLOCK_BIN:-}" ]; then
+    exec "$FEED_BLOCK_BIN" hook run --name "$(basename "$0")" -- "$@" </dev/null
+fi
+feed="@FEED_BIN@"
+if [ -n "$feed" ] && [ -x "$feed" ]; then
+    exec "$feed" hook run --name "$(basename "$0")" -- "$@" </dev/null
+fi
+exec "@PYTHON@" -m feed_block.cli hook run --name "$(basename "$0")" -- "$@" </dev/null
