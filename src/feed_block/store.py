@@ -345,6 +345,17 @@ class Store:
         ).fetchall()
         return [str(row["agent"]) for row in rows]
 
+    def since(self, timestamp: int) -> tuple[dict[str, int], int]:
+        """Posts per agent, and failed posts, from `timestamp` on: the strip's "today"."""
+        rows = self._db.execute(
+            "SELECT agent, COUNT(*) AS n, SUM(status = 'failed') AS failed FROM posts"
+            " WHERE created_at >= ? GROUP BY agent",
+            (timestamp,),
+        ).fetchall()
+        return {str(row["agent"]): int(row["n"]) for row in rows}, sum(
+            int(row["failed"] or 0) for row in rows
+        )
+
     def latest_id(self) -> int:
         """The id of the newest post, or 0 when the feed is empty."""
         row = self._db.execute("SELECT MAX(id) AS m FROM posts").fetchone()

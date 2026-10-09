@@ -31,7 +31,8 @@ HUES: list[tuple[str, str]] = [
 ]
 
 # One glyph per kind on the rail; a failed post wears ✗ whatever its kind.
-GLYPHS = {"commit": "●", "pr": "⇡", "merge": "✓", "test": "≡", "deploy": "◆", "note": "·", "session": "◇"}
+# Merge is a join, not a check mark: ✓ would read as "passed".
+GLYPHS = {"commit": "●", "pr": "⇡", "merge": "⋈", "test": "≡", "deploy": "◆", "note": "·", "session": "◇"}
 FAILED_GLYPH = "✗"
 
 

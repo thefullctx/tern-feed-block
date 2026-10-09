@@ -7,6 +7,7 @@ simpler and safer than any push mechanism. Input never blocks on it.
 
 from __future__ import annotations
 
+import datetime as dt
 import shutil
 import subprocess
 import time
@@ -140,8 +141,12 @@ class Feed:
         posts = self.store.list(agents=self.selected)
         agents = self.store.agents()
         counts = (self.store.count(agents=self.selected), self.store.count())
+        midnight = dt.datetime.combine(dt.date.today(), dt.time()).timestamp()
+        today = self.store.since(int(midnight))
         live = time.monotonic() < self.live_until
-        page = views.feed_view(posts, agents, self.selected, self.handlers, live=live, counts=counts)
+        page = views.feed_view(
+            posts, agents, self.selected, self.handlers, live=live, counts=counts, today=today
+        )
         if self.toast:
             text, sub = self.toast
             page["layer"] = ui.col(ui.toast(text, sub=sub, ttl=TOAST, key="toast"), key="toasts")

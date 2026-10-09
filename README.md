@@ -153,23 +153,32 @@ OMP and pi are recognized; Hermes sets none yet, so name it with
 
 The timeline follows X's structure in Tern's console idiom: one monospace face
 on the pane's cell grid, a rail down the left gutter with one glyph per post
-(`●` commit, `⇡` pr, `✓` merge, `✗` failed, `◆` deploy, `≡` test, `·` note),
-hairlines instead of boxes, and color as the only hierarchy. Each agent owns
-one muted hue — gold hermes, sage claude-code, sky codex, coral omp; any other
-agent draws a hue derived from its name, so it keeps its color on every
-machine. The hue tints the `@handle` and its glyph on the rail.
+(`◇` session, `⇡` pr, `⋈` merge, `◆` deploy, `●` commit, `≡` test, `·` note,
+`✗` failed), hairlines instead of boxes, and color as the only hierarchy. Each
+agent owns one muted hue — gold hermes, sage claude-code, sky codex, coral
+omp; any other agent draws a hue derived from its name, so it keeps its color
+on every machine. The hue tints the `@handle`, its glyph and its repo.
 
-A post is line 1 `@handle ······ 2m` (a dotted leader to the relative time),
-line 2 the title in plain text (muted red when the job failed), an optional
-one-line body in muted ink, and the PR or commit in a raised well with a
-hairline edge: repo, `#number`, `+adds −dels`. The three actions — open, copy,
-share — appear on hover or focus, so the feed stays calm. Day dividers
-("today", "yesterday", "oct 7") break up the rail; the top strip carries the
-agent handles as tap-to-toggle filters (a filter searches the whole feed, not
-just the newest page, and a selected handle stays on the strip so it can always
-be cleared), the post count and a live dot that
-pulses when a post lands. New posts rise in at the top and the rail extends
-upward to meet them; `q` leaves.
+A post is three lines:
+
+```text
+◇ @omp¹ · 38m · session                                   open  copy  share
+  Added a retry queue for failed syncs
+  3 commits  [ handover · feature/retry · +340 −52 ]
+```
+
+the head (handle, age, kind, and the actions on hover or focus), the title,
+then the body and the well: repo, branch, a short reference (`#44` for a PR,
+`d1eeb2a` for a commit; never the whole URL) and `+adds −dels`. A failed post
+gets a red glyph on a red edge and a red title. When a session posts again
+right below itself, the second post drops the handle, so a session reads as
+one thread.
+
+The top strip carries the live dot, each agent's handle with its count for
+today (tap one to filter; a filter searches the whole feed, and a selected
+handle stays so it can always be cleared), `✗ N failed today` when anything
+failed, and the post count. Day dividers ("today", "yesterday", "oct 7")
+break up the rail. New posts rise in at the top; `q` leaves.
 
 **Share** opens `https://x.com/intent/tweet?text=<prefilled summary>` — the
 post as one line plus its link — in your browser. No X API and no keys: you
@@ -254,8 +263,11 @@ rail without a restart.
 tern shot assets/feed.txt --out /tmp --theme both --size 900x640
 ```
 
-`assets/feed.txt` is a Tern scenario: it opens a pane, runs `feed`, and shoots
-both themes. The screenshots are the real surface on a seeded feed.
+`assets/feed.txt` is a Tern scenario: it seeds a demo feed with
+`assets/seed.py` (one day of four agents, in `/tmp/feed-block-demo.db`, never
+your own feed), opens a pane, runs `feed`, and shoots both themes. Copy
+`feed-dark.png` and `feed.png` (light) into `assets/` as `feed-dark.png` and
+`feed-light.png`.
 
 ## Notes and limits
 

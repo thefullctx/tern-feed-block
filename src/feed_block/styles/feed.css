@@ -27,67 +27,77 @@
 }
 [data-role='feed'] :is(.sf-text, .sf-el, .md) { font-family: var(--fb-mono); }
 
-/* ---------- the top strip: the wordmark, agent handles as filters, the live dot */
+/* ---------- the top strip: live dot, wordmark, agent handles as filters, today's counts */
 .sf.sf-row[data-role='strip'] {
-  align-items: baseline; gap: 10px; margin: 0; padding: 0 0 8px;
+  align-items: baseline; gap: 0 10px; margin: 0; padding: 0 0 8px; flex-wrap: wrap;
   box-shadow: inset 0 -1px 0 var(--fb-line); color: var(--fb-faint);
 }
 [data-role='strip'] .sf-text { font: inherit; color: inherit; line-height: var(--fb-lh); }
-[data-role='wordmark'] { font-weight: 650; letter-spacing: 0.2px; color: var(--fb-accent); }
-[data-role='wordmark']::before { content: '▚ '; color: var(--fb-faint); font-weight: 400; }
-[data-role='live'] { width: calc(2 * var(--fb-cw)); text-align: center; color: var(--fb-line); }
-[data-role='live-fresh'] { width: calc(2 * var(--fb-cw)); text-align: center; color: var(--fb-accent);
-  animation: fb-pulse 1.1s ease-in-out infinite; }
-[data-role='chip'] { cursor: pointer; }
-[data-role='chip']:hover { color: var(--fb-ink); }
-[data-role='chip-on'] { color: var(--fb-agent, var(--fb-ink)); cursor: pointer; }
-[data-role='chip-on']::before { content: '['; color: var(--fb-faint); }
-[data-role='chip-on']::after { content: ']'; color: var(--fb-faint); }
+[data-role='strip'] .sf-text[data-role='wordmark'] { font-weight: 650; letter-spacing: 0.2px; color: var(--fb-accent); margin-right: 4px; }
+[data-role='strip'] .sf-text[data-role='live'] { width: calc(2 * var(--fb-cw)); text-align: center; color: var(--fb-line); }
+[data-role='strip'] .sf-text[data-role='live-fresh'] { width: calc(2 * var(--fb-cw)); text-align: center;
+  color: var(--fb-accent); }
+/* kept at low specificity, so Still and Reduce Motion below can switch it off */
+[data-role='live-fresh'] { animation: fb-pulse 1.1s ease-in-out infinite; }
+/* a handle is a filter: tinted by its agent, a soft pill when selected */
+[data-role^='chip'] { cursor: pointer; line-height: var(--fb-lh); padding: 0 6px; margin: 0 -6px;
+  border-radius: 5px; color: color-mix(in srgb, var(--fb-agent, var(--fb-ink)) 72%, var(--fb-faint));
+  transition: background 120ms ease, color 120ms ease; }
+[data-role='chip']:hover { color: var(--fb-agent, var(--fb-ink));
+  background: color-mix(in srgb, var(--fb-agent, var(--fb-ink)) 10%, transparent); }
+[data-role='chip-on'] { color: var(--fb-agent, var(--fb-ink)); font-weight: 600;
+  background: color-mix(in srgb, var(--fb-agent, var(--fb-ink)) 20%, transparent); }
+[data-role='chip'] + [data-role^='chip'], [data-role='chip-on'] + [data-role^='chip'] { margin-left: 2px; }
+[data-role='strip'] .sf-text[data-role='failed-today'] { color: var(--fb-bad); }
 [data-role='count'] { flex: 1 1 auto; text-align: right; }
 @keyframes fb-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 /* ---------- the rail: the gutter's glyph column, one hairline down its right edge */
-[data-role^='post'] { display: flex; flex-direction: row; gap: 0; padding: 5px 0 6px; }
+[data-role^='post'] { display: flex; flex-direction: row; gap: 0; padding: 8px 0 6px; }
+.fb-cont[data-role^='post'] { padding-top: 0; }
 [data-role='rail'] {
   flex: 0 0 auto; align-self: stretch; width: calc(2 * var(--fb-cw)); text-align: center;
   color: var(--fb-agent, var(--fb-faint)); box-shadow: inset -1px 0 0 var(--fb-line); }
 [data-role='glyph'] { font: inherit; line-height: var(--fb-lh); color: inherit; }
+/* a failed post: a red glyph on a red edge, and a red title */
+.fb-failed [data-role='rail'] { color: var(--fb-bad); box-shadow: inset -2px 0 0 var(--fb-bad); }
 [data-role='content'] { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0;
-  padding-left: 8px; }
+  padding-left: 10px; }
 [data-role='content'] > * { position: relative; }
 .fb-new [data-role='glyph'] { animation: fb-pop 420ms var(--fb-pop) both; }
 @keyframes fb-pop { 0% { opacity: 0; transform: scale(0.3); } 60% { opacity: 1; transform: scale(1.3); }
   100% { opacity: 1; transform: scale(1); } }
 
-/* ---------- a post: @handle · leader · time over the title, then the body, then the well */
-.sf.sf-row[data-role='head'] { align-items: baseline; gap: var(--fb-cw); min-height: var(--fb-lh); }
+/* ---------- a post: @handle · 2m · kind, the title, then body and well on one line */
+.sf.sf-row[data-role='head'] { align-items: baseline; gap: 0; min-height: var(--fb-lh); }
 [data-role='head'] .sf-text { font: inherit; line-height: var(--fb-lh); }
 [data-role='handle'] { color: var(--fb-agent, var(--fb-ink)); font-weight: 600; }
-[data-role='kind'] { color: var(--fb-faint); }
-[data-role='leader'] { flex: 1 1 0; min-width: calc(3 * var(--fb-cw)); height: 1px; align-self: center;
-  background: repeating-linear-gradient(90deg, var(--fb-line) 0 1px, transparent 1px 5px); }
-[data-role='time'] { color: var(--fb-faint); }
+[data-role='time'], [data-role='kind'] { color: var(--fb-faint); }
+[data-role='handle'] + [data-role='time']::before,
+[data-role='kind']::before { content: '·'; margin: 0 var(--fb-cw); color: var(--fb-faint); }
 .sf.sf-text[data-role='title'] { font: inherit; line-height: var(--fb-lh); color: var(--fb-ink); }
-.fb-failed [data-role='title'] { color: color-mix(in srgb, var(--fb-bad) 62%, var(--fb-muted)); }
+.fb-failed .sf.sf-text[data-role='title'] { color: color-mix(in srgb, var(--fb-bad) 70%, var(--fb-ink)); }
+.sf.sf-row[data-role='details'] { align-items: baseline; gap: 0 10px; min-width: 0; flex-wrap: wrap; }
 .sf.sf-text[data-role='body'] { font: inherit; line-height: var(--fb-lh); color: var(--fb-muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* the well: the PR or commit, raised with a hairline edge */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+/* the well: where the work lives, raised with a hairline edge */
 .sf.sf-row[data-role='well'] {
-  align-self: start; align-items: baseline; gap: 8px; margin: 3px 0 1px; padding: 2px 10px;
-  border-radius: 6px; background: var(--fb-well); box-shadow: inset 0 0 0 1px var(--fb-line);
-  color: var(--fb-muted); }
-[data-role='well'] .sf-text { font: inherit; color: inherit; }
+  flex: 0 0 auto; align-items: baseline; gap: 0; margin: 1px 0; padding: 0 8px;
+  border-radius: 5px; background: var(--fb-well); box-shadow: inset 0 0 0 1px var(--fb-line);
+  color: var(--fb-muted); line-height: calc(var(--fb-lh) - 2px); }
+[data-role='well'] .sf-text { font: inherit; color: inherit; line-height: inherit; }
+[data-role='well'] > * + *::before { content: '·'; margin: 0 var(--fb-cw); color: var(--fb-faint); }
 [data-role='well-repo'] { color: var(--fb-agent, var(--fb-ink)); }
-[data-role='well-branch'] { color: var(--fb-muted); }
-[data-role='well-branch']::before { content: '⎇ '; color: var(--fb-faint); }
-[data-role='well-link'] { color: var(--fb-faint); }
+[data-role='well-ref'] { color: var(--fb-ink); }
+.sf.sf-row[data-role='well-diff'] { gap: 0; align-items: baseline; }
+[data-role='diff-del'] { margin-left: var(--fb-cw); }
 [data-role='diff-add'] { color: var(--fb-ok, light-dark(#3f7d4a, #8fc79a)); }
 [data-role='diff-del'] { color: var(--fb-bad); }
 
-/* ---------- actions: only on hover or focus, so the feed stays calm */
+/* ---------- actions: at the head's right edge, only on hover or focus */
 .sf.sf-row[data-role='actions'] {
-  align-items: baseline; gap: 12px; margin: 0; padding: 1px 0 0; opacity: 0;
-  transition: opacity 120ms ease; color: var(--fb-faint); }
+  flex: 1 1 auto; justify-content: flex-end; align-items: baseline; gap: 12px; margin: 0; padding: 0;
+  opacity: 0; transition: opacity 120ms ease; color: var(--fb-faint); }
 [data-role='actions'] .sf-text { font: inherit; color: inherit; line-height: var(--fb-lh); }
 [data-role^='post']:hover [data-role='actions'],
 [data-role^='post']:focus-within [data-role='actions'] { opacity: 1; }
@@ -95,7 +105,7 @@
 [data-role='action']:hover { color: var(--fb-ink); }
 
 /* ---------- day dividers: a label on the rail's hairline */
-.sf.sf-row[data-role='day'] { align-items: center; gap: 8px; padding: 14px 0 2px; }
+.sf.sf-row[data-role='day'] { align-items: center; gap: 8px; padding: 14px 0 0; }
 [data-role='day-label'] { font: inherit; line-height: var(--fb-lh); color: var(--fb-faint); }
 [data-role='day']::before { content: '─'; color: var(--fb-line); }
 [data-role='day']::after {

@@ -1,5 +1,5 @@
-# feed-block in Tern: the seeded feed, light and dark
+# feed-block in Tern: a seeded demo feed (assets/seed.py), light and dark
 ready
-run "uv run feed"
+run "uv run python assets/seed.py /tmp/feed-block-demo.db && FEED_BLOCK_DB=/tmp/feed-block-demo.db uv run feed"
 wait 2500
 shot feed

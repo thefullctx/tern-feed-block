@@ -49,6 +49,21 @@ def content(node):
     return [c for c in node.children if c.props.get("role") == "content"][0]
 
 
+def find(node, role):
+    """The first node under `node` (itself included) with this role."""
+    if node.props.get("role") == role:
+        return node
+    for child in node.children:
+        found = find(child, role)
+        if found is not None:
+            return found
+    return None
+
+
+def chip_texts(tree) -> list[str]:
+    return [n.props["text"] for n in tree.values() if n.props.get("role", "").startswith("chip")]
+
+
 def test_post_node_is_a_frameless_el_on_the_rail():
     node = views.post_node(post(), HANDLERS, now=time.time(), newest=True)
     wire = node.to_json()
@@ -68,25 +83,40 @@ def test_failed_post_is_marked_and_keeps_its_kind():
     assert "fb-new" not in wire["p"]["class"].split()
 
 
-def test_head_line_is_handle_leader_time():
+def test_head_line_is_handle_time_kind_then_actions():
     node = views.post_node(post(), HANDLERS, now=time.time(), newest=False)
-    head = [c for c in content(node).children if c.props.get("role") == "head"][0]
-    roles = [c.props.get("role") or c.props.get("tag") for c in head.children]
-    assert roles == ["handle", "leader", "time"]
-    handle = head.children[0]
-    assert handle.props["text"] == "@hermes"
-    assert head.children[2].props["text"] == "2m"
+    head = find(node, "head")
+    assert [c.props.get("role") for c in head.children] == ["handle", "time", "kind", "actions"]
+    assert [c.props.get("text") for c in head.children[:3]] == ["@hermes", "2m", "pr"]
 
 
-def test_well_shows_repo_number_and_diff_stats():
-    node = views.post_node(post(), HANDLERS, now=time.time(), newest=False)
-    well = [c for c in content(node).children if c.props.get("role") == "well"][0]
-    texts = {c.props.get("role"): c.props.get("text") for c in well.children}
-    assert texts["well-repo"] == "handover"
-    assert texts["well-number"] == "#42"
-    assert texts["diff-add"] == "+120"
-    assert texts["diff-del"] == "−34"
-    assert texts["well-link"] == "https://github.com/x/handover/pull/42"
+def test_a_continued_post_drops_its_handle():
+    node = views.post_node(post(), HANDLERS, now=time.time(), newest=False, continued=True)
+    assert [c.props.get("role") for c in find(node, "head").children] == ["time", "kind", "actions"]
+    assert "fb-cont" in node.props["class"].split()
+
+
+def test_well_shows_repo_branch_ref_and_diff_without_the_url():
+    node = views.post_node(post(branch="main"), HANDLERS, now=time.time(), newest=False)
+    well = find(node, "well")
+    assert [c.props.get("role") for c in well.children] == [
+        "well-repo",
+        "well-branch",
+        "well-ref",
+        "well-diff",
+    ]
+    assert find(well, "well-ref").props["text"] == "#42"
+    assert (find(well, "diff-add").props["text"], find(well, "diff-del").props["text"]) == ("+120", "−34")
+    assert "github.com" not in str(well.to_json())
+
+
+def test_reference_is_short():
+    assert views.reference("https://github.com/x/y/pull/42") == "#42"
+    assert views.reference("https://gitlab.com/g/p/-/merge_requests/9") == "#9"
+    assert views.reference("https://github.com/x/y/commit/d1eeb2ad9b59e6fcc") == "d1eeb2a"
+    assert views.reference("https://bitbucket.org/x/y/commits/abcdef1234") == "abcdef1"
+    assert views.reference("https://ci.example.com/run/5") == "ci.example.com"
+    assert views.reference(None) is None
 
 
 def test_well_is_skipped_without_anything_to_show():
@@ -98,15 +128,14 @@ def test_well_is_skipped_without_anything_to_show():
 
 def test_body_is_one_muted_line():
     node = views.post_node(post(body="first\nsecond"), HANDLERS, now=time.time(), newest=False)
-    body = [c for c in content(node).children if c.props.get("role") == "body"][0]
-    assert body.props["text"] == "first"
+    assert find(node, "body").props["text"] == "first"
 
 
 def test_rail_column_carries_the_kind_glyph():
     node = views.post_node(post(kind="merge"), HANDLERS, now=time.time(), newest=False)
     rail = node.children[0]
     assert rail.props["role"] == "rail"
-    assert rail.children[0].props["text"] == "✓"
+    assert rail.children[0].props["text"] == "⋈"  # a join, not a check mark
     assert content(node) is node.children[1]
 
 
@@ -117,16 +146,16 @@ def test_failed_post_wears_the_failed_glyph():
 
 def test_actions_are_open_copy_share_and_open_needs_a_link():
     node = views.post_node(post(), HANDLERS, now=time.time(), newest=False)
-    actions = [c for c in content(node).children if c.props.get("role") == "actions"][0]
+    actions = find(node, "actions")
     assert [c.props["text"] for c in actions.children] == ["open", "copy", "share"]
 
     bare = views.post_node(post(link=None), HANDLERS, now=time.time(), newest=False)
-    actions = [c for c in content(bare).children if c.props.get("role") == "actions"][0]
+    actions = find(bare, "actions")
     assert [c.props["text"] for c in actions.children] == ["copy", "share"]
 
 
 def test_every_kind_has_a_glyph_role():
-    for kind in ("commit", "pr", "merge", "test", "deploy", "note"):
+    for kind in ("commit", "pr", "merge", "test", "deploy", "note", "session"):
         node = views.post_node(post(kind=kind), HANDLERS, now=time.time(), newest=False)
         assert node.props["role"] == f"post-{kind}"
 
@@ -170,8 +199,7 @@ def test_strip_lists_agents_as_filters_with_the_live_dot():
     tree = nodes(page)
     strip = tree["main.feed.strip"]
     assert strip.props["role"] == "strip"
-    chips = [n for n in tree.values() if n.props.get("role", "").startswith("chip")]
-    assert [c.props["text"] for c in chips] == ["@hermes", "@codex"]
+    assert [text.split()[0] for text in chip_texts(tree)] == ["@hermes", "@codex"]
     assert any(n.props.get("role") == "live-fresh" for n in tree.values())
     assert tree["main.feed.strip.count"].props["text"] == "2/2"
 
@@ -206,9 +234,35 @@ def test_a_selected_agent_keeps_its_chip_after_its_posts_scroll_away():
     page = views.feed_view([post(agent="hermes")], ["hermes"], {"codex"}, HANDLERS)
     tree = nodes(page)
     chips = {
-        n.props["text"]: n.props["role"] for n in tree.values() if n.props.get("role", "").startswith("chip")
+        n.props["text"].split()[0]: n.props["role"]
+        for n in tree.values()
+        if n.props.get("role", "").startswith("chip")
     }
     assert chips == {"@hermes": "chip", "@codex": "chip-on"}
+
+
+def test_the_strip_counts_today_per_agent_and_failures():
+    noon = time.mktime(time.localtime()[:3] + (12, 0, 0, 0, 0, -1))
+    posts = [
+        post(id=3, agent="codex", status="failed", created_at=int(noon) - 60),
+        post(id=2, agent="hermes", created_at=int(noon) - 120),
+        post(id=1, agent="hermes", created_at=int(noon) - 2 * 86400),  # not today
+    ]
+    tree = nodes(views.feed_view(posts, None, set(), HANDLERS, now=noon))
+    assert chip_texts(tree) == ["@codex 1", "@hermes 1"]
+    assert tree["main.feed.strip.failed"].props["text"] == "✗ 1 failed today"
+
+
+def test_a_sessions_posts_read_as_a_thread():
+    posts = [
+        post(id=3, session="s1", title="summary"),
+        post(id=2, session="s1", kind="merge", title="merged"),
+        post(id=1, session="s2", title="other session"),
+    ]
+    tree = nodes(views.feed_view(posts, None, set(), HANDLERS))
+    assert "fb-cont" not in tree["main.feed.p3"].props["class"]
+    assert "fb-cont" in tree["main.feed.p2"].props["class"]  # same session, right below
+    assert "fb-cont" not in tree["main.feed.p1"].props["class"]
 
 
 def test_an_empty_diff_is_not_shown():
@@ -242,5 +296,4 @@ def test_agent_ordering_is_newest_first():
     posts = [post(id=9, agent="codex"), post(id=8, agent="hermes"), post(id=7, agent="omp")]
     page = views.feed_view(posts, None, set(), HANDLERS)
     tree = nodes(page)
-    chips = [n for n in tree.values() if n.props.get("role", "").startswith("chip")]
-    assert [c.props["text"] for c in chips] == ["@codex", "@hermes", "@omp"]
+    assert [text.split()[0] for text in chip_texts(tree)] == ["@codex", "@hermes", "@omp"]
