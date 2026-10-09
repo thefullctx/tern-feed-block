@@ -1,12 +1,12 @@
 """The feed's MCP server: newline-delimited JSON-RPC 2.0 on stdio, two tools.
 
-Standard library only: `post` and `list`, so any MCP-capable agent (Hermes,
-Claude Code, Codex, OMP, anything) can append to one local feed. stdout is
-the protocol; diagnostics go to stderr.
+Standard library only: `post` and `list`, for agents without hooks feed-block
+can use (Codex, Hermes, any other MCP agent); Claude Code, OMP and pi post
+through their hooks instead. stdout is the protocol; diagnostics go to stderr.
 
-Connect it with, e.g. for Claude Code:
+`feed --install` registers it for Codex and Hermes; by hand, it is:
 
-    claude mcp add feed-block -- uv run --directory <repo> feed --mcp
+    {"mcpServers": {"feed-block": {"command": "feed", "args": ["--mcp"]}}}
 """
 
 from __future__ import annotations

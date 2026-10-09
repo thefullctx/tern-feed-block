@@ -1,7 +1,8 @@
-"""The `feed` command: post, list, git hooks, and the Tern surface itself.
+"""The `feed` command: post, list, install, hooks, and the Tern surface itself.
 
 Bare `feed` opens the feed; inside Tern it hands the pane to the surface,
-anywhere else it prints the recent posts as plain text.
+anywhere else it prints the recent posts as plain text. `feed --install` sets
+up the agents on this machine; `feed agent-hook` is what their hooks call.
 """
 
 from __future__ import annotations

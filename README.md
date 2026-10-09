@@ -139,6 +139,7 @@ feed post --agent hermes --kind pr --title "pushed PR #42 to handover" \
     --repo handover --link https://github.com/you/handover/pull/42 --add 120 --del 34
 feed list                # recent posts, newest first, grouped by day
 feed list --agent codex --json
+feed --install           # set up the agents on this machine (--uninstall undoes it)
 feed --doctor            # what is installed, where the feed lives
 feed --mcp               # the MCP server itself (agents call this)
 ```
@@ -187,8 +188,8 @@ post it yourself. **Copy** puts the same summary on the system clipboard
 link when it is an `http(s)` URL; other schemes (`file:`, app links) are refused.
 
 New posts appear live, without a restart: the surface polls the local file for
-the newest id four times a second, so a post from any process — another
-agent's MCP call, a git hook, another terminal's `feed post` — lands on the
+the newest id four times a second, so a post from any process — an agent's
+hook, an MCP call, a git hook, another terminal's `feed post` — lands on the
 rail the moment it is written. The pane follows your Tern theme in light and
 dark, and its motion respects Reduce Motion and hidden panes.
 

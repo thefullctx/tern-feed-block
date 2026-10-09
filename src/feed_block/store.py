@@ -1,7 +1,9 @@
-"""The local feed store: one SQLite file, one table, no server.
+"""The local feed store: one SQLite file, no server.
 
-Any process may write (the MCP server, the CLI, a git hook) while the Tern
-surface reads: WAL mode plus a busy timeout is the whole concurrency story.
+Two tables: `posts`, the feed itself, and `sessions`, what each agent session
+has done so far (the automatic posts read it). Any process may write (an
+agent's hook, the MCP server, the CLI, a git hook) while the Tern surface
+reads: WAL mode plus a busy timeout is the whole concurrency story.
 """
 
 from __future__ import annotations

@@ -1,9 +1,10 @@
 """The timeline as native nodes: the rail, day dividers, the filter strip.
 
-X's structure in Tern's console idiom: `@handle ······ 2m` over the title, a
-muted one-line body, and the PR or commit in a raised well with a hairline
-edge. The rail is a hairline in the gutter with one glyph per post, tinted by
-the agent's color. Actions show on hover or focus only.
+X's structure in Tern's console idiom, three lines a post: `@handle · 2m · kind`
+(actions at the right, on hover or focus only), the title, then a muted body
+beside a raised well (repo · branch · #42 · +adds −dels). The rail is a
+hairline in the gutter with one glyph per post, tinted by the agent's color;
+a session posting again right below itself drops its handle, as a thread.
 """
 
 from __future__ import annotations
