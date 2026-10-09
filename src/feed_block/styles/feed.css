@@ -78,6 +78,8 @@
   color: var(--fb-muted); }
 [data-role='well'] .sf-text { font: inherit; color: inherit; }
 [data-role='well-repo'] { color: var(--fb-agent, var(--fb-ink)); }
+[data-role='well-branch'] { color: var(--fb-muted); }
+[data-role='well-branch']::before { content: '⎇ '; color: var(--fb-faint); }
 [data-role='well-link'] { color: var(--fb-faint); }
 [data-role='diff-add'] { color: var(--fb-ok, light-dark(#3f7d4a, #8fc79a)); }
 [data-role='diff-del'] { color: var(--fb-bad); }

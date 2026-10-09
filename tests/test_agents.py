@@ -22,3 +22,17 @@ from feed_block import agents
 )
 def test_detect(env, agent):
     assert agents.detect(env) == agent
+
+
+@pytest.mark.parametrize(
+    ("env", "session"),
+    [
+        ({}, None),
+        ({"CLAUDE_CODE_SESSION_ID": "c-1"}, "c-1"),
+        ({"CODEX_THREAD_ID": "t-1"}, "t-1"),
+        ({"PI_SESSION_FILE": "/Users/x/.omp/agent/sessions/2026_abc.jsonl"}, "2026_abc"),
+        ({"FEED_BLOCK_SESSION": "mine", "CODEX_THREAD_ID": "t-1"}, "mine"),
+    ],
+)
+def test_session(env, session):
+    assert agents.session(env) == session

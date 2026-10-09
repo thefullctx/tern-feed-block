@@ -16,7 +16,7 @@ from urllib.parse import quote
 
 from tern_sdk import ui
 
-from . import colors
+from . import colors, labels
 from .reltime import day_key, day_label, relative
 from .store import Post
 
@@ -61,7 +61,9 @@ def _leader(key: str):
     return ui.html.div(role="leader", class_="fb-leader", key=key)
 
 
-def post_node(post: Post, handlers: Handlers, *, now: float, newest: bool) -> ui.Node:
+def post_node(
+    post: Post, handlers: Handlers, *, now: float, newest: bool, handle: str | None = None
+) -> ui.Node:
     """One post on the rail: the gutter glyph, then the head line, title, body, well, actions."""
     classes = [colors.agent_class(post.agent)]
     if post.failed:
@@ -69,7 +71,9 @@ def post_node(post: Post, handlers: Handlers, *, now: float, newest: bool) -> ui
     if newest:
         classes.append("fb-new")
     head = ui.row(
-        ui.html.span(f"@{post.agent}", class_=colors.agent_class(post.agent), role="handle", key="h"),
+        ui.html.span(
+            handle or f"@{post.agent}", class_=colors.agent_class(post.agent), role="handle", key="h"
+        ),
         _leader("l"),
         ui.text(relative(post.created_at, now), role="time", key="t"),
         role="head",
@@ -81,6 +85,8 @@ def post_node(post: Post, handlers: Handlers, *, now: float, newest: bool) -> ui
     well = []
     if post.repo:
         well.append(ui.text(post.repo, role="well-repo", key="r"))
+    if post.branch:
+        well.append(ui.text(post.branch, role="well-branch", key="br"))
     tag = number(post.link)
     if tag:
         well.append(ui.text(tag, role="well-number", key="n"))
@@ -201,13 +207,19 @@ def feed_view(
             )
         )
     else:
+        numbers = labels.session_numbers(shown)
         groups: dict[str, tuple[str, list[Post]]] = {}
         for post in shown:
             key = day_key(post.created_at).isoformat()
             groups.setdefault(key, (day_label(post.created_at, now), []))[1].append(post)
         for index, (key, (label, day)) in enumerate(groups.items()):
             body.append(ui.row(ui.text(label, role="day-label", key=f"dl{index}"), role="day", key=f"d{key}"))
-            body.extend(post_node(post, handlers, now=now, newest=post.id == newest) for post in day)
+            body.extend(
+                post_node(
+                    post, handlers, now=now, newest=post.id == newest, handle=labels.handle(post, numbers)
+                )
+                for post in day
+            )
     return {
         # The region root's own props are not drawn, so the scoped column is its child.
         "main": ui.col(

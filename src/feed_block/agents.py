@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from pathlib import PurePath
 
 
 def detect(env: Mapping[str, str] | None = None) -> str | None:
@@ -26,3 +27,17 @@ def detect(env: Mapping[str, str] | None = None) -> str | None:
     if session_file:
         return "omp" if "/.omp/" in session_file else "pi"
     return None
+
+
+def session(env: Mapping[str, str] | None = None) -> str | None:
+    """The running agent's session id, when it exposes one to its commands."""
+    env = os.environ if env is None else env
+    named = env.get("FEED_BLOCK_SESSION", "").strip()
+    if named:
+        return named
+    for key in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
+        value = env.get(key, "").strip()
+        if value:
+            return value
+    session_file = env.get("PI_SESSION_FILE", "").strip()
+    return PurePath(session_file).stem if session_file else None

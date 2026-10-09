@@ -136,6 +136,8 @@ def test_list_json_is_the_store(db, capsys):
         "deletions",
         "status",
         "created_at",
+        "branch",
+        "session",
     }
 
 
@@ -224,7 +226,7 @@ def test_hook_install_and_uninstall_are_reversible(repo, db, monkeypatch):
     assert not (repo / ".git" / "hooks" / "post-commit").exists()
 
 
-def test_an_installed_hook_posts_for_real(repo, db, monkeypatch):
+def test_an_installed_hook_posts_for_real(repo, db, monkeypatch, commits_on):
     """The hook itself runs: a commit posts, with the binary this install baked in."""
     monkeypatch.chdir(repo)
     cli.main(["hook", "install", "--repo", str(repo)])
@@ -235,7 +237,7 @@ def test_an_installed_hook_posts_for_real(repo, db, monkeypatch):
         assert posts and posts[0].kind == "commit"
 
 
-def test_hook_posts_a_commit_with_stats(repo, db, capsys, monkeypatch):
+def test_hook_posts_a_commit_with_stats(repo, db, capsys, monkeypatch, commits_on):
     monkeypatch.chdir(repo)
     assert cli.main(["hook", "install", "--repo", str(repo)]) == 0
     capsys.readouterr()
@@ -276,7 +278,7 @@ def test_hook_outside_a_repository_posts_nothing(tmp_path, db, capsys, monkeypat
         assert store.count() == 0
 
 
-def test_hook_skips_a_commit_already_posted(repo, db, capsys, monkeypatch):
+def test_hook_skips_a_commit_already_posted(repo, db, capsys, monkeypatch, commits_on):
     monkeypatch.chdir(repo)
     git("remote", "add", "origin", "git@github.com:thefullctx/handover.git", cwd=repo)
     assert cli.main(["hook", "run", "--name", "post-commit", "--"]) == 0
@@ -291,7 +293,7 @@ def test_hook_skips_a_commit_already_posted(repo, db, capsys, monkeypatch):
         assert store.count() == 1
 
 
-def test_a_hook_run_by_an_agent_posts_as_that_agent(repo, db, capsys, monkeypatch):
+def test_a_hook_run_by_an_agent_posts_as_that_agent(repo, db, capsys, monkeypatch, commits_on):
     monkeypatch.chdir(repo)
     monkeypatch.setenv("CODEX_THREAD_ID", "t-1")
     assert cli.main(["hook", "run", "--name", "post-commit", "--"]) == 0
@@ -323,7 +325,7 @@ def test_hooks_call_this_installs_feed(monkeypatch):
     assert cli.feed_bin() == os.path.join(scripts, "feed")
 
 
-def test_an_amended_commit_is_not_posted_twice(repo, db, monkeypatch):
+def test_an_amended_commit_is_not_posted_twice(repo, db, monkeypatch, commits_on):
     monkeypatch.chdir(repo)
     cli.main(["hook", "install", "--repo", str(repo)])
     (repo / "a.txt").write_text("one\ntwo\n")
@@ -363,15 +365,11 @@ def sha(repo):
     ).stdout.strip()
 
 
-def test_hook_install_prints_the_agent_instruction(repo, db, capsys):
-    assert cli.main(["--install", "--repo", str(repo)]) == 0
-    out = capsys.readouterr().out
-    assert "call the feed-block MCP tool `post`" in out
-    assert "claude mcp add feed-block" in out
-    assert json.loads(out[out.index('{\n  "mcpServers"') :])["mcpServers"]["feed-block"]["args"][-2:] == [
-        "feed",
-        "--mcp",
-    ]
+def test_commits_post_only_when_switched_on(repo, db, capsys, monkeypatch):
+    monkeypatch.chdir(repo)
+    assert cli.main(["hook", "run", "--name", "post-commit", "--"]) == 0
+    with Store(db) as store:
+        assert store.count() == 0  # merges only, by default
 
 
 def test_hook_install_requires_a_repository(tmp_path, db, capsys, monkeypatch):

@@ -154,3 +154,23 @@ def test_a_selected_agent_reaches_past_the_newest_page(store):
         store.post(agent="hermes", kind="note", title=str(index))
     assert all(p.agent == "hermes" for p in store.list())
     assert [p.title for p in store.list(agents={"codex"})] == ["old work"]
+
+
+def test_an_older_feed_gains_the_new_columns(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    db = sqlite3.connect(path)
+    db.execute(
+        "CREATE TABLE posts (id INTEGER PRIMARY KEY AUTOINCREMENT, agent TEXT NOT NULL, kind TEXT NOT NULL,"
+        " title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', repo TEXT, link TEXT, additions INTEGER,"
+        " deletions INTEGER, status TEXT NOT NULL DEFAULT 'ok', created_at INTEGER NOT NULL)"
+    )
+    db.execute("INSERT INTO posts (agent, kind, title, created_at) VALUES ('hermes', 'note', 'old', 1)")
+    db.commit()
+    db.close()
+    with Store(path) as store:
+        [old] = store.list()
+        assert (old.title, old.branch, old.session) == ("old", None, None)
+        made = store.post(agent="omp", kind="session", title="new", branch="main", session="s1")
+        assert (made.branch, made.session) == ("main", "s1")

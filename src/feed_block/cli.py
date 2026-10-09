@@ -9,27 +9,31 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import sqlite3
-import subprocess
 import sys
 import sysconfig
 from importlib.resources import files
 from pathlib import Path
 
-from . import __version__, agents
+from . import __version__, agents, autopost, config, integrations
+from . import gitutil
+from .gitutil import commit_url, numstat, repo_root
+from .gitutil import run as _git
 from .mcp_server import receipt
+from .labels import handle, session_numbers
 from .reltime import day_label, relative
 from .store import DEFAULT_LIMIT, KINDS, STATUSES, Post, Store, default_db_path
 
 HOOKS = ("post-commit", "post-merge")
 HOOK_MARKER = "# feed-block managed hook"
 
-# The instruction an agent needs, printed by --install.
+# The instruction an MCP-only agent needs, printed by --install. Results only, so the
+# feed stays readable: no post per commit or per test run.
 AGENT_INSTRUCTION = (
-    "After every finished job, call the feed-block MCP tool `post` with what you did "
-    "(agent: your name, kind: commit|pr|merge|test|deploy|note, title: one line)."
+    "Call the feed-block MCP tool `post` only for results: when you open a PR (kind: pr), merge "
+    "(kind: merge), deploy (kind: deploy), and once when you finish a session's work (kind: session, "
+    "title: one line on what you did). Not for single commits or passing tests."
 )
 
 # The kinds the surface's view needs from Tern's vocabulary.
@@ -38,63 +42,6 @@ SURFACE_KINDS = {"col", "row", "text", "el"}
 
 # ---------------------------------------------------------------------------
 # git plumbing (hooks only)
-
-
-def _git(args: list[str], cwd: Path) -> str | None:
-    try:
-        done = subprocess.run(
-            ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=30, check=False
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return done.stdout.strip() if done.returncode == 0 else None
-
-
-def repo_root(cwd: Path | None = None) -> Path | None:
-    top = _git(["rev-parse", "--show-toplevel"], cwd or Path.cwd())
-    return Path(top) if top else None
-
-
-# An origin remote on a known host: scp-style `git@host:path`, or an https/ssh URL
-# with an optional user and port.
-REMOTE = re.compile(
-    r"^(?:(?:https?|ssh|git)://(?:[^@/]+@)?(?P<host>[^/:]+)(?::\d+)?/"
-    r"|[^@/]+@(?P<scp>[^/:]+):)(?P<path>.+?)(?:\.git)?/?$"
-)
-# Where each host keeps a commit page.
-COMMIT_PAGES = {
-    "github.com": "https://github.com/{path}/commit/{sha}",
-    "gitlab.com": "https://gitlab.com/{path}/-/commit/{sha}",
-    "bitbucket.org": "https://bitbucket.org/{path}/commits/{sha}",
-}
-
-
-def commit_url(remote: str | None, sha: str) -> str | None:
-    """A commit link from an origin remote on GitHub, GitLab or Bitbucket."""
-    if not remote or not sha:
-        return None
-    found = REMOTE.match(remote.strip())
-    if not found:
-        return None
-    page = COMMIT_PAGES.get((found["host"] or found["scp"]).lower())
-    return page.format(path=found["path"], sha=sha) if page else None
-
-
-def numstat(root: Path) -> tuple[int | None, int | None]:
-    """Additions and deletions of HEAD's commit, when it has a diff to show."""
-    out = _git(["show", "--numstat", "--format=", "HEAD"], root)
-    if not out:
-        return None, None
-    adds = dels = 0
-    seen = False
-    for line in out.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 3 or not parts[0].isdigit() or not parts[1].isdigit():
-            continue  # binary files report "-"
-        adds += int(parts[0])
-        dels += int(parts[1])
-        seen = True
-    return (adds, dels) if seen else (None, None)
 
 
 def hook_context(root: Path) -> dict:
@@ -109,6 +56,8 @@ def hook_context(root: Path) -> dict:
         ),
         "additions": None,
         "deletions": None,
+        "branch": gitutil.branch(root),
+        "session": agents.session(),
     }
 
 
@@ -136,6 +85,8 @@ def run_hook(name: str, store: Store) -> int:
     root = repo_root()
     if root is None:
         return 0  # a hook fired outside a repository: nothing to post
+    if name == "post-commit" and not config.load().git_commits:
+        return 0  # merges only, unless [git] commits = true: commits count into session summaries
     if name == "post-commit" and rewriting(root):
         return 0  # the original commit posted already; its rewrite would double-post
     info = hook_context(root)
@@ -176,12 +127,6 @@ def hook_body(name: str) -> str:
     return body.replace("@FEED_BIN@", feed_bin()).replace("@PYTHON@", sys.executable)
 
 
-def project_dir() -> Path | None:
-    """The feed-block checkout, when this install runs from one."""
-    here = Path(__file__).resolve().parent.parent
-    return here if (here / "pyproject.toml").exists() else None
-
-
 def install_hooks(repo: Path, *, uninstall: bool = False) -> list[str]:
     """Installs (or restores) feed-block's hooks in one repository, reversibly."""
     hooks = hooks_dir(repo)
@@ -216,15 +161,19 @@ def install_hooks(repo: Path, *, uninstall: bool = False) -> list[str]:
 # plain output
 
 
-def plain_post(post: Post, width: int) -> str:
+# The widest kind name, so titles share one column.
+KIND_WIDTH = max(len(kind) for kind in KINDS)
+
+
+def plain_post(post: Post, width: int, numbers: dict[int, int] | None = None) -> str:
     """One post as aligned columns: handle, age, kind (✗ when it failed), then the title."""
     mark = "✗" if post.failed else " "
-    extras = [part for part in (post.repo, post.diffstat) if part]
+    extras = [part for part in (post.repo, post.branch, post.diffstat) if part]
     title = " · ".join([post.title, *extras])
-    line = f"{'@' + post.agent:<{width}}  {relative(post.created_at):>4}  {mark} {post.kind:<6}  {title}"
+    line = f"{handle(post, numbers or {}):<{width}}  {relative(post.created_at):>4}  {mark} {post.kind:<{KIND_WIDTH}}  {title}"
     detail = post.link or post.body.replace("\n", " ⏎ ")
     # The detail sits under the title, so the columns read straight down.
-    indent = " " * (width + 2 + 4 + 2 + 2 + 6 + 2)
+    indent = " " * (width + 2 + 4 + 2 + 2 + KIND_WIDTH + 2)
     return f"{line}\n{indent}{detail}" if detail else line
 
 
@@ -234,13 +183,14 @@ def plain_feed(posts: list[Post], store: Store | None = None) -> str:
         return "feed-block: the feed is empty. Post with: feed post --agent you --kind note --title …"
     where = f" · {store.count()} posts · {store.path}" if store else ""
     blocks = [f"feed-block{where}"]
-    width = max(len(post.agent) + 1 for post in posts)
+    numbers = session_numbers(posts)
+    width = max(len(handle(post, numbers)) for post in posts)
     days: dict[str, list[Post]] = {}
     for post in posts:
         days.setdefault(day_label(post.created_at), []).append(post)
     for label, day in days.items():
         blocks.append(f"── {label} " + "─" * max(0, 58 - len(label)))
-        blocks.extend(plain_post(post, width) for post in day)
+        blocks.extend(plain_post(post, width, numbers) for post in day)
     return "\n".join(blocks)
 
 
@@ -361,31 +311,58 @@ def report(status: str, text: str) -> None:
 
 
 def install(args: list[str]) -> int:
-    """`feed --install [--repo PATH]`: git hooks, plus the agent instructions."""
+    """`feed --install`: set up every agent found for this user, after asking."""
     parser = argparse.ArgumentParser(prog="feed --install")
-    parser.add_argument("--repo", help="Repository to hook (default: the current one)")
+    parser.add_argument("--yes", "-y", action="store_true", help="apply without asking")
+    parser.add_argument("--uninstall", action="store_true", help="remove everything --install added")
     parsed = parser.parse_args(args)
-    repo = Path(parsed.repo).resolve() if parsed.repo else repo_root()
-    if repo is None:
-        print("feed: not a git repository; pass --repo PATH", file=sys.stderr)
-        return 2
-    for line in install_hooks(repo):
-        print(line)
+    command = integrations.feed_command(feed_bin(), sys.executable)
+    changes, notes = integrations.plan(Path.home(), command, uninstall=parsed.uninstall)
+    for note in notes:
+        print(f"· {note}")
+    if not changes:
+        print("Nothing to change." if not parsed.uninstall else "Nothing to remove.")
+        return 0
+    print("feed-block will:" if not parsed.uninstall else "feed-block will remove:")
+    for change in changes:
+        print(f"  {change.agent:<12} {change.what}\n  {'':<12} in {change.path}")
+    if not parsed.uninstall:
+        print(f"  (each file is backed up once as <file>{integrations.BACKUP_SUFFIX})")
+    if not parsed.yes:
+        if not sys.stdin.isatty():
+            print("Run again with --yes to apply.")
+            return 1
+        if input("Apply? [y/N] ").strip().lower() not in ("y", "yes"):
+            print("Nothing changed.")
+            return 1
+    for change in changes:
+        change.apply()
+        print(f"done  {change.agent}: {change.what}")
+    if parsed.uninstall:
+        return 0
     print()
-    print("Give your agent this one line:")
-    print(f"  {AGENT_INSTRUCTION}")
-    print()
-    checkout = project_dir()
-    run_from = ["--directory", str(checkout)] if checkout else []
-    print("Or register the MCP server yourself, e.g. for Claude Code:")
-    print("  claude mcp add feed-block -- uv run " + " ".join(run_from + ["feed", "--mcp"]))
-    print("Generic MCP config (any MCP-capable agent):")
-    args = ["run", *run_from, "feed", "--mcp"] if checkout else ["feed", "--mcp"]
-    print(
-        json.dumps(
-            {"mcpServers": {"feed-block": {"command": "uv" if checkout else "feed", "args": args}}}, indent=2
-        )
-    )
+    automatic = [c.agent for c in changes if c.automatic]
+    manual = [c.agent for c in changes if not c.automatic]
+    if automatic:
+        print(f"Posting automatically: {', '.join(automatic)} (restart running sessions to pick it up).")
+    if manual:
+        print(f"Posting through MCP: {', '.join(manual)}. Add this line to their instructions:")
+        print(f"  {AGENT_INSTRUCTION}")
+    print("Git merges you make yourself post too, per repository: feed hook install")
+    return 0
+
+
+def agent_hook(source: str, stream=None) -> int:
+    """`feed agent-hook claude|event`: one agent event on stdin, never failing the agent."""
+    stream = sys.stdin if stream is None else stream
+    try:
+        payload = json.loads(stream.read() or "{}")
+        event = integrations.claude_event(payload) if source == "claude" else payload
+        if isinstance(event, dict):
+            with Store() as store:
+                autopost.handle(event, store, config.load())
+    except Exception as exc:  # an agent's hook must never break the agent
+        print(f"feed agent-hook: {exc}", file=sys.stderr)
     return 0
 
 
@@ -417,6 +394,9 @@ def build_parser() -> argparse.ArgumentParser:
     hook_run = hooks.add_parser("run", help="called by the hook itself")
     hook_run.add_argument("--name", required=True, choices=HOOKS)
     hook_run.add_argument("rest", nargs="*")
+
+    agent = sub.add_parser("agent-hook", help="called by an agent's hooks or extension")
+    agent.add_argument("source", choices=("claude", "event"))
     return parser
 
 
@@ -441,6 +421,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_list(parsed)
         if parsed.cmd == "hook":
             return cmd_hook(parsed)
+        if parsed.cmd == "agent-hook":
+            return agent_hook(parsed.source)
         return open_feed()
     except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
         print(f"feed: {exc}", file=sys.stderr)

@@ -71,6 +71,7 @@ def test_tools_list_has_post_and_list(store):
         "additions",
         "deletions",
         "status",
+        "branch",
     }
     assert tools[1]["inputSchema"]["properties"]["limit"]["maximum"] == 500
 

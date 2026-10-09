@@ -11,12 +11,14 @@ Connect it with, e.g. for Claude Code:
 
 from __future__ import annotations
 
+import functools
 import json
 import sys
+import uuid
 from collections.abc import Iterable
 from typing import Any, IO
 
-from . import __version__
+from . import __version__, agents
 from .store import DEFAULT_LIMIT, KINDS, MAX_LIMIT, STATUSES, Post, Store
 
 # MCP revisions this server answers; a client's version is echoed when known.
@@ -33,7 +35,10 @@ POST_SCHEMA: dict[str, Any] = {
         "kind": {
             "type": "string",
             "enum": list(KINDS),
-            "description": "commit, pr, merge, test, deploy or note: what the finished job was.",
+            "description": (
+                "pr, merge or deploy for those results; session for the one summary of a session's work. "
+                "commit, test and note exist, but single commits and passing tests are not worth a post."
+            ),
         },
         "title": {
             "type": "string",
@@ -41,6 +46,7 @@ POST_SCHEMA: dict[str, Any] = {
         },
         "body": {"type": "string", "description": "Optional detail, shown muted under the title."},
         "repo": {"type": "string", "description": "Repository or project name, e.g. 'handover'."},
+        "branch": {"type": "string", "description": "The branch the work is on."},
         "link": {"type": "string", "description": "URL of the PR, commit, run or page."},
         "additions": {"type": "integer", "minimum": 0, "description": "Lines added."},
         "deletions": {"type": "integer", "minimum": 0, "description": "Lines removed."},
@@ -70,9 +76,11 @@ TOOLS = [
     {
         "name": "post",
         "description": (
-            "Post a finished job to the local feed-block feed. Call it after every finished job with "
-            "what you did: agent is your own name, kind is one of commit, pr, merge, test, deploy, "
-            "note, title is one line, and body, repo, link, additions, deletions and status are optional."
+            "Post a result to the local feed-block feed, so the user can see what got done today. Only "
+            "for results: a PR opened (kind pr), a merge (merge), a deploy (deploy), and one summary when "
+            "you finish a session's work (session). Not for single commits or passing tests. agent is "
+            "your own name, title is one line; body, repo, branch, link, additions, deletions and status "
+            "(failed when it did not work out) are optional."
         ),
         "inputSchema": POST_SCHEMA,
     },
@@ -91,6 +99,15 @@ INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
+
+
+@functools.cache
+def process_session() -> str:
+    """This server's session: the agent's own id when it exposes one, else one per process.
+
+    A stdio server is started once per agent session, so its lifetime is the session's.
+    """
+    return agents.session() or uuid.uuid4().hex[:12]
 
 
 class ToolError(Exception):
@@ -137,6 +154,8 @@ def call_tool(name: str, arguments: Any, store: Store) -> str:
                 additions=arguments.get("additions"),
                 deletions=arguments.get("deletions"),
                 status=_string(arguments, "status") or "ok",
+                branch=_string(arguments, "branch"),
+                session=process_session(),
             )
             return receipt(post)
         if name == "list":
@@ -164,7 +183,8 @@ def _dispatch(method: str, params: Any, store: Store) -> Any:
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": SERVER_INFO,
             "instructions": (
-                "After every finished job, call the post tool with what you did. Call list to read the feed."
+                "Call post for results only: a PR opened, a merge, a deploy, and one summary when you "
+                "finish a session's work. Not for single commits or passing tests. Call list to read the feed."
             ),
         }
     if method == "ping":

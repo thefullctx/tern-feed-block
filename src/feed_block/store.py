@@ -15,7 +15,7 @@ from pathlib import Path
 
 # What a post can be about, and how it ended. Anything else is refused here,
 # so every writer (MCP, CLI, hook) and the surface agree on the vocabulary.
-KINDS = ("commit", "pr", "merge", "test", "deploy", "note")
+KINDS = ("commit", "pr", "merge", "test", "deploy", "note", "session")
 STATUSES = ("ok", "failed")
 
 SCHEMA = """
@@ -30,11 +30,29 @@ CREATE TABLE IF NOT EXISTS posts (
     additions INTEGER,
     deletions INTEGER,
     status TEXT NOT NULL DEFAULT 'ok',
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    branch TEXT,
+    session TEXT
 );
 CREATE INDEX IF NOT EXISTS posts_recent ON posts (id DESC);
 CREATE INDEX IF NOT EXISTS posts_agent ON posts (agent, id DESC);
+-- What an agent session has done so far, per repository it worked in: the
+-- automatic posts read this to decide whether the session has anything to say.
+CREATE TABLE IF NOT EXISTS sessions (
+    session TEXT NOT NULL,
+    root TEXT NOT NULL,
+    agent TEXT NOT NULL,
+    base TEXT,
+    started_at INTEGER NOT NULL,
+    tests_ok INTEGER,
+    tests_summary TEXT,
+    post_id INTEGER,
+    PRIMARY KEY (session, root)
+);
 """
+
+# Columns added after the first release; an older feed gains them on open.
+ADDED_COLUMNS = {"branch": "TEXT", "session": "TEXT"}
 
 # How many posts feed list and the surface show when no limit is given.
 DEFAULT_LIMIT = 50
@@ -65,6 +83,8 @@ class Post:
     deletions: int | None
     status: str
     created_at: int
+    branch: str | None = None
+    session: str | None = None
 
     @property
     def failed(self) -> bool:
@@ -90,6 +110,8 @@ class Post:
             "deletions": self.deletions,
             "status": self.status,
             "created_at": self.created_at,
+            "branch": self.branch,
+            "session": self.session,
         }
 
 
@@ -106,6 +128,11 @@ def _title(title: str) -> str:
         raise ValueError("title is required")
     # One line on the rail; bodies carry the rest.
     return title.splitlines()[0].strip()
+
+
+def _optional(value: object) -> str | None:
+    """A trimmed string, or None for nothing or blanks."""
+    return str(value).strip() or None if value else None
 
 
 def _counts(value: object, field: str) -> int | None:
@@ -144,6 +171,10 @@ class Store:
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA busy_timeout=10000")
         self._db.executescript(SCHEMA)
+        have = {row["name"] for row in self._db.execute("PRAGMA table_info(posts)")}
+        for name, kind in ADDED_COLUMNS.items():
+            if name not in have:
+                self._db.execute(f"ALTER TABLE posts ADD COLUMN {name} {kind}")
         self._db.commit()
 
     def close(self) -> None:
@@ -169,8 +200,32 @@ class Store:
         additions: int | None = None,
         deletions: int | None = None,
         status: str = "ok",
+        branch: str | None = None,
+        session: str | None = None,
     ) -> Post:
         """Appends one post and returns it. Refuses an unknown kind or status."""
+        made = self._build(
+            agent=agent, kind=kind, title=title, body=body, repo=repo, link=link, additions=additions,
+            deletions=deletions, status=status, branch=branch, session=session,
+        )  # fmt: skip
+        with self._db:
+            return self._insert(made)
+
+    def _build(
+        self,
+        *,
+        agent: str,
+        kind: str,
+        title: str,
+        body: str = "",
+        repo: str | None = None,
+        link: str | None = None,
+        additions: int | None = None,
+        deletions: int | None = None,
+        status: str = "ok",
+        branch: str | None = None,
+        session: str | None = None,
+    ) -> Post:
         kind = str(kind or "").strip().lower()
         if kind not in KINDS:
             raise ValueError(f"kind must be one of {', '.join(KINDS)} (got {kind!r})")
@@ -183,31 +238,84 @@ class Store:
             kind=kind,
             title=_title(title),
             body=str(body or ""),
-            repo=str(repo).strip() or None if repo else None,
-            link=str(link).strip() or None if link else None,
+            repo=_optional(repo),
+            link=_optional(link),
             additions=_counts(additions, "additions"),
             deletions=_counts(deletions, "deletions"),
             status=status,
             created_at=int(time.time()),
+            branch=_optional(branch),
+            session=_optional(session),
         )
-        with self._db:
-            cursor = self._db.execute(
-                "INSERT INTO posts (agent, kind, title, body, repo, link, additions, deletions,"
-                " status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    post.agent,
-                    post.kind,
-                    post.title,
-                    post.body,
-                    post.repo,
-                    post.link,
-                    post.additions,
-                    post.deletions,
-                    post.status,
-                    post.created_at,
-                ),
-            )
+        return post
+
+    def _insert(self, post: Post) -> Post:
+        fields = {name: value for name, value in post.dict().items() if name != "id"}
+        cursor = self._db.execute(
+            f"INSERT INTO posts ({', '.join(fields)}) VALUES ({', '.join('?' * len(fields))})",
+            list(fields.values()),
+        )
         return Post(**{**post.dict(), "id": int(cursor.lastrowid or 0)})
+
+    def replace_session_post(self, session: str, root: str, **fields) -> Post:
+        """Posts a session's summary in place of its previous one, in one step.
+
+        Two events of one session (a reply ending as the session closes) can land
+        at once; the write lock makes the second replace the first, never sit beside it.
+        """
+        made = self._build(session=session, **fields)
+        self._db.execute("BEGIN IMMEDIATE")
+        try:
+            row = self._db.execute(
+                "SELECT post_id FROM sessions WHERE session = ? AND root = ?", (session, root)
+            ).fetchone()
+            new = self._insert(made)
+            if row and row["post_id"]:
+                self._db.execute("DELETE FROM posts WHERE id = ?", (row["post_id"],))
+            self._db.execute(
+                "UPDATE sessions SET post_id = ? WHERE session = ? AND root = ?", (new.id, session, root)
+            )
+            self._db.commit()
+        except BaseException:
+            self._db.rollback()
+            raise
+        return new
+
+    # -- agent sessions
+
+    def session_state(self, session: str, root: str) -> dict | None:
+        """What this session has recorded for one repository, or None."""
+        row = self._db.execute(
+            "SELECT * FROM sessions WHERE session = ? AND root = ?", (session, root)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def session_roots(self, session: str) -> list[dict]:
+        """Every repository this session has worked in."""
+        rows = self._db.execute("SELECT * FROM sessions WHERE session = ? ORDER BY started_at", (session,))
+        return [dict(row) for row in rows]
+
+    def open_session(self, session: str, root: str, agent: str, base: str | None) -> dict:
+        """Starts tracking a session in one repository (a no-op when it already is)."""
+        with self._db:
+            self._db.execute(
+                "INSERT OR IGNORE INTO sessions (session, root, agent, base, started_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (session, root, agent, base, int(time.time())),
+            )
+        return self.session_state(session, root) or {}
+
+    def update_session(self, session: str, root: str, **fields: object) -> None:
+        """Records what a session did: its latest test result, its summary post."""
+        allowed = {"tests_ok", "tests_summary", "post_id"}
+        if not fields or not set(fields) <= allowed:
+            raise ValueError(f"session fields are {', '.join(sorted(allowed))}")
+        assignments = ", ".join(f"{name} = ?" for name in fields)
+        with self._db:
+            self._db.execute(
+                f"UPDATE sessions SET {assignments} WHERE session = ? AND root = ?",
+                [*fields.values(), session, root],
+            )
 
     # -- reading
 
