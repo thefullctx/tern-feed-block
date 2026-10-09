@@ -241,3 +241,8 @@ def test_serve_over_real_pipes_with_two_agents(tmp_path):
         process.stdin.close()
         assert process.wait(timeout=10) == 0
         assert process.stderr.read() == ""
+
+
+def test_an_empty_batch_is_one_invalid_request(store):
+    replies = mcp_server.handle_frames([], store)
+    assert len(replies) == 1 and replies[0]["error"]["code"] == mcp_server.INVALID_REQUEST

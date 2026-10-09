@@ -112,6 +112,16 @@ def test_open_action_opens_the_link(store, monkeypatch):
     assert feed.toast == ("nothing to open", "this post has no link")
 
 
+def test_open_refuses_links_that_are_not_web_pages(store, monkeypatch):
+    opened = []
+    monkeypatch.setattr(surface_mod, "open_url", lambda url: opened.append(url) or True)
+    feed = Feed(None, store)
+    for link in ("file:///etc/passwd", "vscode://open?x", "javascript:alert(1)"):
+        feed.open_post(post(store, link=link))
+        assert feed.toast[0] == "not a web link"
+    assert opened == []
+
+
 def test_toggle_filters(store):
     feed = Feed(None, store)
     feed.toggle("hermes")

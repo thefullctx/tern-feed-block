@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import time
 import webbrowser
+from urllib.parse import urlsplit
 
 from tern_sdk import Key, ui
 
@@ -52,6 +53,11 @@ def clipboard(text: str) -> bool:
         except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError):
             continue
     return False
+
+
+def openable(url: str | None) -> bool:
+    """Whether a post's link is a web page: agents write links, so no file: or app schemes."""
+    return bool(url) and urlsplit(url).scheme.lower() in ("http", "https")
 
 
 def open_url(url: str) -> bool:
@@ -130,17 +136,19 @@ class Feed:
 
     def render(self) -> None:
         assert self.surface
-        posts = self.store.list()
+        # Filter in the query, so a selected agent's older posts still show.
+        posts = self.store.list(agents=self.selected)
+        agents = self.store.agents()
+        counts = (self.store.count(agents=self.selected), self.store.count())
         live = time.monotonic() < self.live_until
-        page = views.feed_view(posts, None, self.selected, self.handlers, live=live)
+        page = views.feed_view(posts, agents, self.selected, self.handlers, live=live, counts=counts)
         if self.toast:
             text, sub = self.toast
             page["layer"] = ui.col(ui.toast(text, sub=sub, ttl=TOAST, key="toast"), key="toasts")
         self.surface.render(**page)
-        agents = tuple(views.agents_of(posts))
-        if agents != self._styled:
-            self._styled = agents  # a new agent gets its color rule, without a restart
-            self.surface.stylesheet("feed-block", design.stylesheet(list(agents)))
+        if tuple(agents) != self._styled:
+            self._styled = tuple(agents)  # a new agent gets its color rule, without a restart
+            self.surface.stylesheet("feed-block", design.stylesheet(agents))
 
     # -- actions
 
@@ -157,10 +165,14 @@ class Feed:
         self.dirty = True
 
     def open_post(self, post: Post) -> None:
-        if post.link and open_url(post.link):
+        if not post.link:
+            self._say("nothing to open", "this post has no link")
+        elif not openable(post.link):
+            self._say("not a web link", post.link)
+        elif open_url(post.link):
             self._say("opened", post.link)
         else:
-            self._say("nothing to open", "this post has no link")
+            self._say("could not open a browser", post.link)
 
     def copy_post(self, post: Post) -> None:
         text = views.summary(post)

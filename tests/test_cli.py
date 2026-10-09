@@ -254,6 +254,64 @@ def test_hook_skips_a_commit_already_posted(repo, db, capsys, monkeypatch):
         assert store.count() == 1
 
 
+def test_hooks_install_into_a_worktree(repo, db, tmp_path, monkeypatch):
+    """A worktree's .git is a file: the hooks go where git runs them, the common hooks dir."""
+    tree = tmp_path / "wt"
+    git("worktree", "add", "-q", str(tree), cwd=repo)
+    monkeypatch.chdir(tree)
+    assert cli.main(["hook", "install", "--repo", str(tree)]) == 0
+    assert cli.HOOK_MARKER in (repo / ".git" / "hooks" / "post-commit").read_text()
+
+
+def test_hooks_install_honors_core_hooks_path(repo, db, monkeypatch):
+    monkeypatch.chdir(repo)
+    git("config", "core.hooksPath", ".githooks", cwd=repo)
+    assert cli.main(["hook", "install", "--repo", str(repo)]) == 0
+    assert cli.HOOK_MARKER in (repo / ".githooks" / "post-commit").read_text()
+    assert not (repo / ".git" / "hooks" / "post-commit").exists()
+
+
+def test_hooks_call_this_installs_feed(monkeypatch):
+    """Not another `feed` on PATH: the hook runs the code that installed it."""
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/elsewhere/bin/feed")
+    scripts = cli.sysconfig.get_path("scripts")
+    assert cli.feed_bin() == os.path.join(scripts, "feed")
+
+
+def test_an_amended_commit_is_not_posted_twice(repo, db, monkeypatch):
+    monkeypatch.chdir(repo)
+    cli.main(["hook", "install", "--repo", str(repo)])
+    (repo / "a.txt").write_text("one\ntwo\n")
+    git("commit", "-qam", "posted once", cwd=repo)
+    git("commit", "-q", "--amend", "-m", "posted once, reworded", cwd=repo)
+    with Store(db) as store:
+        assert [p.title for p in store.list()] == ["posted once"]
+
+
+@pytest.mark.parametrize(
+    ("remote", "link"),
+    [
+        ("git@github.com:o/r.git", "https://github.com/o/r/commit/abc"),
+        ("https://user@github.com/o/r.git", "https://github.com/o/r/commit/abc"),
+        ("ssh://git@github.com:22/o/r.git", "https://github.com/o/r/commit/abc"),
+        ("git@gitlab.com:g/sub/r.git", "https://gitlab.com/g/sub/r/-/commit/abc"),
+        ("https://bitbucket.org/o/r", "https://bitbucket.org/o/r/commits/abc"),
+        ("https://git.example.com/o/r.git", None),
+        (None, None),
+    ],
+)
+def test_commit_url_from_remotes(remote, link):
+    assert cli.commit_url(remote, "abc") == link
+
+
+def test_a_broken_feed_file_is_reported_not_raised(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "feed.db"
+    path.write_bytes(b"not a database, just bytes" * 100)
+    monkeypatch.setenv("FEED_BLOCK_DB", str(path))
+    assert cli.main(["list"]) == 1
+    assert capsys.readouterr().err.startswith("feed: ")
+
+
 def sha(repo):
     return subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True

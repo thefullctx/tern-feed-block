@@ -9,9 +9,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
+import sqlite3
 import subprocess
 import sys
+import sysconfig
 from importlib.resources import files
 from pathlib import Path
 
@@ -52,15 +55,29 @@ def repo_root(cwd: Path | None = None) -> Path | None:
     return Path(top) if top else None
 
 
+# An origin remote on a known host: scp-style `git@host:path`, or an https/ssh URL
+# with an optional user and port.
+REMOTE = re.compile(
+    r"^(?:(?:https?|ssh|git)://(?:[^@/]+@)?(?P<host>[^/:]+)(?::\d+)?/"
+    r"|[^@/]+@(?P<scp>[^/:]+):)(?P<path>.+?)(?:\.git)?/?$"
+)
+# Where each host keeps a commit page.
+COMMIT_PAGES = {
+    "github.com": "https://github.com/{path}/commit/{sha}",
+    "gitlab.com": "https://gitlab.com/{path}/-/commit/{sha}",
+    "bitbucket.org": "https://bitbucket.org/{path}/commits/{sha}",
+}
+
+
 def commit_url(remote: str | None, sha: str) -> str | None:
-    """A commit link from an origin remote, when there is one to build it from."""
+    """A commit link from an origin remote on GitHub, GitLab or Bitbucket."""
     if not remote or not sha:
         return None
-    for prefix in ("git@github.com:", "https://github.com/", "ssh://git@github.com/"):
-        if remote.startswith(prefix):
-            tail = remote[len(prefix) :].removesuffix(".git").rstrip("/")
-            return f"https://github.com/{tail}/commit/{sha}"
-    return None
+    found = REMOTE.match(remote.strip())
+    if not found:
+        return None
+    page = COMMIT_PAGES.get((found["host"] or found["scp"]).lower())
+    return page.format(path=found["path"], sha=sha) if page else None
 
 
 def numstat(root: Path) -> tuple[int | None, int | None]:
@@ -95,6 +112,22 @@ def hook_context(root: Path) -> dict:
     }
 
 
+def hooks_dir(repo: Path) -> Path | None:
+    """Where git runs this repository's hooks: honors worktrees and core.hooksPath."""
+    found = _git(["rev-parse", "--git-path", "hooks"], repo)
+    return (repo / found).resolve() if found else None
+
+
+def rewriting(root: Path) -> bool:
+    """Whether HEAD's commit rewrites one already posted: an amend, or a rebase in progress."""
+    for state in ("rebase-merge", "rebase-apply"):
+        path = _git(["rev-parse", "--git-path", state], root)
+        if path and (root / path).exists():
+            return True
+    action = _git(["reflog", "-1", "--format=%gs", "HEAD"], root) or ""
+    return action.startswith("commit (amend)")
+
+
 def run_hook(name: str, store: Store) -> int:
     """`feed hook run`: what a git hook calls. Idempotent per commit link."""
     if name not in HOOKS:
@@ -103,6 +136,8 @@ def run_hook(name: str, store: Store) -> int:
     root = repo_root()
     if root is None:
         return 0  # a hook fired outside a repository: nothing to post
+    if name == "post-commit" and rewriting(root):
+        return 0  # the original commit posted already; its rewrite would double-post
     info = hook_context(root)
     info["kind"] = "merge" if name == "post-merge" else "commit"
     if info["kind"] == "merge" and not info["title"].lower().startswith("merge"):
@@ -125,9 +160,12 @@ def _hooks_dir() -> Path:
 
 def feed_bin() -> str:
     """The command the hooks should call: this install's `feed`, or its interpreter."""
-    beside = Path(sys.executable).resolve().parent / "feed"
-    if beside.is_file() and os.access(beside, os.X_OK):
-        return str(beside)
+    # This interpreter's own scripts directory: not resolved, since a venv's python is a
+    # symlink to its base interpreter and resolving it would find another install's feed.
+    for scripts in (sysconfig.get_path("scripts"), str(Path(sys.executable).parent)):
+        beside = Path(scripts) / "feed"
+        if beside.is_file() and os.access(beside, os.X_OK):
+            return str(beside)
     found = shutil.which("feed")
     return str(Path(found).resolve()) if found else ""
 
@@ -146,7 +184,9 @@ def project_dir() -> Path | None:
 
 def install_hooks(repo: Path, *, uninstall: bool = False) -> list[str]:
     """Installs (or restores) feed-block's hooks in one repository, reversibly."""
-    hooks = repo / ".git" / "hooks"
+    hooks = hooks_dir(repo)
+    if hooks is None:
+        raise RuntimeError(f"not a git repository: {repo}")
     hooks.mkdir(parents=True, exist_ok=True)
     done = []
     for name in HOOKS:
@@ -289,7 +329,12 @@ def doctor() -> int:
     hooks = "not in a repository"
     root = repo_root()
     if root is not None:
-        found = [name for name in HOOKS if (root / ".git" / "hooks" / name).exists()]
+        where = hooks_dir(root)
+        found = [
+            name
+            for name in HOOKS
+            if where and (where / name).is_file() and HOOK_MARKER in (where / name).read_text()
+        ]
         hooks = f"{', '.join(found) or 'not installed'} ({root.name})"
     tern = shutil.which("tern")
     print(("ok   " if sys.version_info >= (3, 11) else "MISS ") + f"python {sys.version.split()[0]}")
@@ -390,7 +435,7 @@ def main(argv: list[str] | None = None) -> int:
         if parsed.cmd == "hook":
             return cmd_hook(parsed)
         return open_feed()
-    except (OSError, RuntimeError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
         print(f"feed: {exc}", file=sys.stderr)
         return 1
 

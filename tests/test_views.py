@@ -7,6 +7,7 @@ import time
 from tern_sdk.reconcile import View
 
 from feed_block import views
+from feed_block.reltime import day_label
 from feed_block.store import Post
 from feed_block.views import Handlers
 
@@ -196,7 +197,23 @@ def test_day_dividers_break_up_the_rail():
     page = views.feed_view(posts, ["hermes"], set(), HANDLERS, now=float(today))
     tree = nodes(page)
     labels = sorted(n.props.get("text", "") for n in tree.values() if n.props.get("role") == "day-label")
-    assert labels == sorted(["today", "oct 6"])
+    assert labels == sorted(["today", day_label(older, today)])
+    assert day_label(older, today) not in ("today", "yesterday")
+
+
+def test_a_selected_agent_keeps_its_chip_after_its_posts_scroll_away():
+    # Only other agents' posts are on the rail, but the filter can still be cleared.
+    page = views.feed_view([post(agent="hermes")], ["hermes"], {"codex"}, HANDLERS)
+    tree = nodes(page)
+    chips = {
+        n.props["text"]: n.props["role"] for n in tree.values() if n.props.get("role", "").startswith("chip")
+    }
+    assert chips == {"@hermes": "chip", "@codex": "chip-on"}
+
+
+def test_counts_come_from_the_whole_store_when_given():
+    page = views.feed_view([post()], ["hermes"], set(), HANDLERS, counts=(1, 750))
+    assert nodes(page)["main.feed.strip.count"].props["text"] == "1/750"
 
 
 def test_empty_feed_says_how_to_fill_it():

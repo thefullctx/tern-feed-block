@@ -178,14 +178,22 @@ def feed_view(
     *,
     live: bool = False,
     now: float | None = None,
+    counts: tuple[int, int] | None = None,
 ) -> dict:
-    """The pane: the strip over the timeline, filtered by the selected agents."""
+    """The pane: the strip over the timeline, filtered by the selected agents.
+
+    `counts` is (matching, total) across the whole store; without it the strip
+    counts the posts it was given.
+    """
     now = time.time() if now is None else now
-    agents = agents_of(posts) if agents is None else agents
+    agents = agents_of(posts) if agents is None else list(agents)
+    # A selected agent keeps its chip, so a filter can always be cleared.
+    agents += sorted(agent for agent in selected if agent not in agents)
     shown = [post for post in posts if not selected or post.agent in selected]
+    matching, total = counts if counts is not None else (len(shown), len(posts))
     newest = shown[0].id if shown else 0
     body: list[ui.Node] = []
-    if not posts:
+    if not total:
         body.append(ui.text(EMPTY, role="empty", key="empty"))
     elif not shown:
         body.append(
@@ -205,7 +213,7 @@ def feed_view(
         # The region root's own props are not drawn, so the scoped column is its child.
         "main": ui.col(
             ui.col(
-                strip(agents, selected, len(shown), len(posts), live, handlers),
+                strip(agents, selected, matching, total, live, handlers),
                 *body,
                 role="feed",
                 key="feed",

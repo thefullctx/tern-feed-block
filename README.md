@@ -30,7 +30,6 @@ Prerequisites: macOS or Linux, Python 3.11+, [uv](https://docs.astral.sh/uv/),
 and Tern with the Surface Protocol v1. Git is optional (it powers the hooks).
 
 ```sh
-```sh
 git clone https://github.com/thefullctx/tern-feed-block.git   # or your fork
 cd tern-feed-block
 uv sync --frozen
@@ -40,7 +39,8 @@ uv run feed --install          # hooks a repository; prints the agent instructio
 
 `--doctor` reports the Python and SDK versions, the tern binary, the git hooks
 of the repository you are in, and where the feed lives. `--install` installs
-the git hooks in the current repository (or `--repo PATH`) and prints the
+the git hooks in the current repository (or `--repo PATH`; worktrees and
+`core.hooksPath` are honored) and prints the
 registration snippets below. Both are reversible: `feed hook install
 --uninstall` restores any hook it replaced.
 
@@ -108,7 +108,9 @@ one-line body in muted ink, and the PR or commit in a raised well with a
 hairline edge: repo, `#number`, `+adds −dels`. The three actions — open, copy,
 share — appear on hover or focus, so the feed stays calm. Day dividers
 ("today", "yesterday", "oct 7") break up the rail; the top strip carries the
-agent handles as tap-to-toggle filters, the post count and a live dot that
+agent handles as tap-to-toggle filters (a filter searches the whole feed, not
+just the newest page, and a selected handle stays on the strip so it can always
+be cleared), the post count and a live dot that
 pulses when a post lands. New posts rise in at the top and the rail extends
 upward to meet them; `q` leaves.
 
@@ -116,7 +118,7 @@ upward to meet them; `q` leaves.
 post as one line plus its link — in your browser. No X API and no keys: you
 post it yourself. **Copy** puts the same summary on the system clipboard
 (`pbcopy` on macOS, `wl-copy` or `xclip` on Linux). **Open** opens the post's
-link.
+link when it is an `http(s)` URL; other schemes (`file:`, app links) are refused.
 
 New posts appear live, without a restart: the surface polls the local file for
 the newest id four times a second, so a post from any process — another
@@ -133,8 +135,11 @@ repository, and `feed hook install --repo PATH` installs them anywhere.
 - `post-merge` posts the merge,
 
 with the commit's author as the handle, the repository's name, and a commit
-link when the `origin` remote is on GitHub. A commit is posted once per link,
-so a replayed or rewritten hook does not double-post. Git has no post-push
+link when the `origin` remote is on GitHub, GitLab or Bitbucket. A commit is
+posted once per link, so a replayed hook does not double-post, and an amend or
+a rebase in progress is skipped, since the original commit posted already. The
+hooks call the `feed` of the install that wrote them, not whichever `feed` is
+first on `PATH`. Git has no post-push
 hook, so a push posts through the commit it carries; `FEED_BLOCK=0` disables
 the hooks without uninstalling them.
 
@@ -151,7 +156,7 @@ Tern pane ⇄ Surface Protocol ⇄ feed surface ⇄ SQLite ⇄ MCP server / CLI 
 | `src/feed_block/cli.py` | `feed post`, `feed list`, `feed hook`, `--doctor`, `--install` |
 | `src/feed_block/views.py` | The timeline as native nodes: rail, handles, wells, dividers, strip |
 | `src/feed_block/surface.py` | The live pane: the session loop, the watcher, the actions |
-| `src/feed_block/design.py`, `design/feed.css` | The console-idiom stylesheet and its light/dark palette |
+| `src/feed_block/design.py`, `styles/feed.css` | The console-idiom stylesheet and its light/dark palette |
 | `src/feed_block/colors.py` | Agent hues and kind glyphs, stable from a name alone |
 | `src/feed_block/reltime.py` | `2m`, `3h`, `oct 7` and the day dividers |
 
@@ -187,8 +192,8 @@ both themes. The screenshots are the real surface on a seeded feed.
 
 - One feed per machine. There is no server, sync or account: the file at
   `~/.feed-block/feed.db` is the whole system.
-- The commit link is derived for GitHub remotes; other hosts post without a
-  link, and a link-free commit cannot be deduplicated.
+- The commit link is derived for GitHub, GitLab and Bitbucket remotes; other
+  hosts post without a link, and a link-free commit cannot be deduplicated.
 - MCP is implemented directly over stdio (newline-delimited JSON-RPC 2.0) with
   the standard library; the `mcp` package is not a dependency.
 - The Tern surface needs Tern with Surface Protocol v1. Anywhere else, `feed`

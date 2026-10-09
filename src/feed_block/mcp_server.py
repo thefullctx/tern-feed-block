@@ -219,6 +219,8 @@ def _error(rid: Any, code: int, message: str) -> dict:
 def handle_frames(frames: Iterable[Any], store: Store) -> list[dict]:
     """Answers one JSON value: a frame, or a batch of frames (replies in order)."""
     if isinstance(frames, list):
+        if not frames:  # JSON-RPC 2.0: an empty batch is one invalid request
+            return [_error(None, INVALID_REQUEST, "empty batch")]
         return [reply for frame in frames if (reply := handle(frame, store)) is not None]
     reply = handle(frames, store)
     return [reply] if reply is not None else []

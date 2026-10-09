@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -116,13 +117,21 @@ def _counts(value: object, field: str) -> int | None:
     return number
 
 
+def _where(agent: str | None, agents: Iterable[str] | None) -> tuple[str, list[str]]:
+    """The WHERE clause for one agent, or any of several; empty when neither is given."""
+    names = [str(agent).strip()] if agent else []
+    names += [str(name).strip() for name in agents or ()]
+    if not names:
+        return "", []
+    return f" WHERE agent IN ({', '.join('?' * len(names))})", names
+
+
 class Store:
     """Posts, newest first. Safe to share across processes on one machine."""
 
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path) if path is not None else default_db_path()
-        if self.path.parent and not self.path.parent.exists():
-            self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(self.path, timeout=10.0)
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")
@@ -195,21 +204,23 @@ class Store:
 
     # -- reading
 
-    def list(self, *, limit: int = DEFAULT_LIMIT, agent: str | None = None) -> list[Post]:
-        """Newest first, optionally one agent's posts only."""
+    def list(
+        self,
+        *,
+        limit: int = DEFAULT_LIMIT,
+        agent: str | None = None,
+        agents: Iterable[str] | None = None,
+    ) -> list[Post]:
+        """Newest first, optionally one agent's posts (or any of several agents') only."""
         try:
             count = int(limit)
         except (TypeError, ValueError):
             raise ValueError("limit must be an integer") from None
         count = max(1, min(count, MAX_LIMIT))
-        sql = "SELECT * FROM posts"
-        params: list = []
-        if agent:
-            sql += " WHERE agent = ?"
-            params.append(str(agent).strip())
-        sql += " ORDER BY id DESC LIMIT ?"
-        params.append(count)
-        rows = self._db.execute(sql, params).fetchall()
+        where, params = _where(agent, agents)
+        rows = self._db.execute(
+            f"SELECT * FROM posts{where} ORDER BY id DESC LIMIT ?", [*params, count]
+        ).fetchall()
         return [Post(**dict(row)) for row in rows]
 
     def agents(self) -> list[str]:
@@ -229,6 +240,8 @@ class Store:
         row = self._db.execute("SELECT 1 FROM posts WHERE link = ? LIMIT 1", (link,)).fetchone()
         return row is not None
 
-    def count(self) -> int:
-        row = self._db.execute("SELECT COUNT(*) AS n FROM posts").fetchone()
+    def count(self, *, agents: Iterable[str] | None = None) -> int:
+        """How many posts, optionally from these agents only."""
+        where, params = _where(None, agents)
+        row = self._db.execute(f"SELECT COUNT(*) AS n FROM posts{where}", params).fetchone()
         return int(row["n"])

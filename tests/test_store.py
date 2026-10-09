@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from feed_block.store import KINDS, MAX_LIMIT, STATUSES, Post, Store
+from feed_block.store import DEFAULT_LIMIT, KINDS, MAX_LIMIT, STATUSES, Post, Store
 
 
 @pytest.fixture
@@ -138,3 +138,19 @@ def test_store_creates_its_directory(tmp_path):
     with Store(nested) as store:
         post(store, title="nested")
         assert nested.exists()
+
+
+def test_list_and_count_filter_by_several_agents(store):
+    for agent in ("hermes", "codex", "omp", "codex"):
+        store.post(agent=agent, kind="note", title=agent)
+    assert [p.agent for p in store.list(agents={"codex", "omp"})] == ["codex", "omp", "codex"]
+    assert store.count(agents=["codex"]) == 2
+    assert store.count(agents=set()) == store.count() == 4  # no selection, no filter
+
+
+def test_a_selected_agent_reaches_past_the_newest_page(store):
+    store.post(agent="codex", kind="note", title="old work")
+    for index in range(DEFAULT_LIMIT + 5):
+        store.post(agent="hermes", kind="note", title=str(index))
+    assert all(p.agent == "hermes" for p in store.list())
+    assert [p.title for p in store.list(agents={"codex"})] == ["old work"]

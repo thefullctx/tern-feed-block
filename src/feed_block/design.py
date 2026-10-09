@@ -6,7 +6,7 @@ from importlib.resources import files
 
 from . import colors
 
-ASSETS = files("feed_block").joinpath("design")
+ASSETS = files("feed_block").joinpath("styles")
 BASE_CSS = ASSETS.joinpath("feed.css").read_text()
 
 # The surface's own accent and its neutral scale, light then dark, so the pane

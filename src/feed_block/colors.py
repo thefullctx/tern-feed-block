@@ -64,9 +64,8 @@ def _rule(cls: str, pair: tuple[str, str]) -> str:
 
 
 def rules(agents: list[str] | None = None) -> str:
-    """The stylesheet's color rules: the named agents, the hues, and any others."""
+    """The stylesheet's color rules: the named agents, then one per other agent."""
     lines = [_rule(f"fb-agent-{name}", pair) for name, pair in NAMED.items()]
-    lines += [_rule(f"fb-hue-{index}", pair) for index, pair in enumerate(HUES)]
     for agent in agents or []:
         if agent.lower() in NAMED:
             continue
