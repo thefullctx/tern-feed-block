@@ -70,6 +70,13 @@ class Post:
     def failed(self) -> bool:
         return self.status == "failed"
 
+    @property
+    def diffstat(self) -> str | None:
+        """`+120 −34`, or None when there is no diff to show (none given, or +0 −0)."""
+        if not self.additions and not self.deletions:
+            return None
+        return f"+{self.additions or 0} −{self.deletions or 0}"
+
     def dict(self) -> dict:
         return {
             "id": self.id,

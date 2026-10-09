@@ -46,8 +46,8 @@ def summary(post: Post) -> str:
     text = post.title
     if post.repo:
         text += f" · {post.repo}"
-    if post.additions is not None or post.deletions is not None:
-        text += f" · +{post.additions or 0} −{post.deletions or 0}"
+    if post.diffstat:
+        text += f" · {post.diffstat}"
     return f"{text}\n{post.link}" if post.link else text
 
 
@@ -84,10 +84,9 @@ def post_node(post: Post, handlers: Handlers, *, now: float, newest: bool) -> ui
     tag = number(post.link)
     if tag:
         well.append(ui.text(tag, role="well-number", key="n"))
-    if post.additions is not None:
-        well.append(ui.text(f"+{post.additions}", role="diff-add", key="a"))
-    if post.deletions is not None:
-        well.append(ui.text(f"−{post.deletions}", role="diff-del", key="d"))
+    if post.diffstat:
+        well.append(ui.text(f"+{post.additions or 0}", role="diff-add", key="a"))
+        well.append(ui.text(f"−{post.deletions or 0}", role="diff-del", key="d"))
     if post.link:
         well.append(ui.text(post.link, role="well-link", key="k"))
     if well:

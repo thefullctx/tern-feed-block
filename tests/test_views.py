@@ -211,6 +211,12 @@ def test_a_selected_agent_keeps_its_chip_after_its_posts_scroll_away():
     assert chips == {"@hermes": "chip", "@codex": "chip-on"}
 
 
+def test_an_empty_diff_is_not_shown():
+    tree = nodes(views.feed_view([post(additions=0, deletions=0)], ["hermes"], set(), HANDLERS))
+    assert not any(n.props.get("role") in ("diff-add", "diff-del") for n in tree.values())
+    assert "+0" not in views.summary(post(additions=0, deletions=0))
+
+
 def test_counts_come_from_the_whole_store_when_given():
     page = views.feed_view([post()], ["hermes"], set(), HANDLERS, counts=(1, 750))
     assert nodes(page)["main.feed.strip.count"].props["text"] == "1/750"

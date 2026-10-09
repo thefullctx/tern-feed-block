@@ -73,6 +73,43 @@ def test_post_falls_back_to_the_agent_env(db, monkeypatch, capsys):
         assert post.agent == "codex" and post.failed
 
 
+def test_post_names_the_agent_running_it(db, monkeypatch):
+    monkeypatch.setenv("CLAUDECODE", "1")
+    assert cli.main(["post", "--kind", "note", "--title", "from inside claude code"]) == 0
+    with Store(db) as store:
+        assert store.list()[0].agent == "claude-code"
+
+
+def test_plain_feed_reads_in_columns(db, capsys):
+    cli.main(
+        ["post", "--agent", "claude-code", "--kind", "commit", "--title", "one", "--add", "0", "--del", "0"]
+    )
+    cli.main(
+        [
+            "post",
+            "--agent",
+            "codex",
+            "--kind",
+            "test",
+            "--title",
+            "two",
+            "--status",
+            "failed",
+            "--body",
+            "why",
+        ]
+    )
+    capsys.readouterr()
+    cli.main(["list"])
+    lines = capsys.readouterr().out.splitlines()
+    codex = next(line for line in lines if line.startswith("@codex"))
+    claude = next(line for line in lines if line.startswith("@claude-code"))
+    assert codex.index("two") == claude.index("one")  # titles share one column
+    assert "✗ test" in codex
+    assert "+0" not in claude  # an empty diff is not shown
+    assert lines[lines.index(codex) + 1].index("why") == codex.index("two")
+
+
 def test_post_without_an_agent_fails(db, monkeypatch, capsys):
     monkeypatch.delenv("FEED_BLOCK_AGENT", raising=False)
     assert cli.main(["post", "--kind", "note", "--title", "nameless"]) == 1
@@ -252,6 +289,14 @@ def test_hook_skips_a_commit_already_posted(repo, db, capsys, monkeypatch):
     assert capsys.readouterr().out == ""
     with Store(db) as store:
         assert store.count() == 1
+
+
+def test_a_hook_run_by_an_agent_posts_as_that_agent(repo, db, capsys, monkeypatch):
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CODEX_THREAD_ID", "t-1")
+    assert cli.main(["hook", "run", "--name", "post-commit", "--"]) == 0
+    with Store(db) as store:
+        assert store.list()[0].agent == "codex"  # not the git user, hermes
 
 
 def test_hooks_install_into_a_worktree(repo, db, tmp_path, monkeypatch):

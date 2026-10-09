@@ -116,9 +116,7 @@ def _string(arguments: dict, key: str, *, required: bool = False) -> str | None:
 
 
 def receipt(post: Post) -> str:
-    stats = ""
-    if post.additions is not None or post.deletions is not None:
-        stats = f" · +{post.additions or 0} −{post.deletions or 0}"
+    stats = f" · {post.diffstat}" if post.diffstat else ""
     where = f" in {post.repo}" if post.repo else ""
     return f"posted #{post.id} to feed-block{where} · {post.agent} · {post.kind}{stats} · {post.status}"
 

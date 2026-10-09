@@ -18,7 +18,7 @@ import sysconfig
 from importlib.resources import files
 from pathlib import Path
 
-from . import __version__
+from . import __version__, agents
 from .mcp_server import receipt
 from .reltime import day_label, relative
 from .store import DEFAULT_LIMIT, KINDS, STATUSES, Post, Store, default_db_path
@@ -100,7 +100,7 @@ def numstat(root: Path) -> tuple[int | None, int | None]:
 def hook_context(root: Path) -> dict:
     """The commit a hook just saw: who, what, where, and how big."""
     return {
-        "agent": _git(["config", "--get", "user.name"], root) or "git",
+        "agent": agents.detect() or _git(["config", "--get", "user.name"], root) or "git",
         "title": _git(["log", "-1", "--format=%s"], root) or "a commit",
         "body": (_git(["log", "-1", "--format=%b"], root) or "").strip(),
         "repo": root.name,
@@ -216,15 +216,16 @@ def install_hooks(repo: Path, *, uninstall: bool = False) -> list[str]:
 # plain output
 
 
-def plain_post(post: Post) -> str:
-    marks = "✗" if post.failed else " "
-    stats = ""
-    if post.additions is not None or post.deletions is not None:
-        stats = f" · +{post.additions or 0} −{post.deletions or 0}"
-    where = f" · {post.repo}" if post.repo else ""
-    line = f"@{post.agent}{marks} {relative(post.created_at):>4} {post.kind:<6} {post.title}{where}{stats}"
+def plain_post(post: Post, width: int) -> str:
+    """One post as aligned columns: handle, age, kind (✗ when it failed), then the title."""
+    mark = "✗" if post.failed else " "
+    extras = [part for part in (post.repo, post.diffstat) if part]
+    title = " · ".join([post.title, *extras])
+    line = f"{'@' + post.agent:<{width}}  {relative(post.created_at):>4}  {mark} {post.kind:<6}  {title}"
     detail = post.link or post.body.replace("\n", " ⏎ ")
-    return f"{line}\n     {detail}" if detail else line
+    # The detail sits under the title, so the columns read straight down.
+    indent = " " * (width + 2 + 4 + 2 + 2 + 6 + 2)
+    return f"{line}\n{indent}{detail}" if detail else line
 
 
 def plain_feed(posts: list[Post], store: Store | None = None) -> str:
@@ -233,12 +234,13 @@ def plain_feed(posts: list[Post], store: Store | None = None) -> str:
         return "feed-block: the feed is empty. Post with: feed post --agent you --kind note --title …"
     where = f" · {store.count()} posts · {store.path}" if store else ""
     blocks = [f"feed-block{where}"]
+    width = max(len(post.agent) + 1 for post in posts)
     days: dict[str, list[Post]] = {}
     for post in posts:
         days.setdefault(day_label(post.created_at), []).append(post)
     for label, day in days.items():
         blocks.append(f"── {label} " + "─" * max(0, 58 - len(label)))
-        blocks.extend(plain_post(post) for post in day)
+        blocks.extend(plain_post(post, width) for post in day)
     return "\n".join(blocks)
 
 
@@ -274,7 +276,7 @@ def open_feed() -> int:
 def cmd_post(args: argparse.Namespace) -> int:
     with Store() as store:
         made = store.post(
-            agent=args.agent or os.environ.get("FEED_BLOCK_AGENT") or "",
+            agent=args.agent or agents.detect() or "",
             kind=args.kind,
             title=args.title,
             body=args.body,
@@ -337,20 +339,25 @@ def doctor() -> int:
         ]
         hooks = f"{', '.join(found) or 'not installed'} ({root.name})"
     tern = shutil.which("tern")
-    print(("ok   " if sys.version_info >= (3, 11) else "MISS ") + f"python {sys.version.split()[0]}")
-    print(("ok   " if sdk[0] else "MISS ") + sdk[1])
-    print("info  " + hooks)
-    print(
-        ("ok   " if tern else "info ")
-        + (f"tern at {tern}" if tern else "tern not on PATH (needed to view the surface)")
+    report("ok" if sys.version_info >= (3, 11) else "MISS", f"python {sys.version.split()[0]}")
+    report("ok" if sdk[0] else "MISS", sdk[1])
+    report("info", hooks)
+    report(
+        "ok" if tern else "info",
+        f"tern at {tern}" if tern else "tern not on PATH (needed to view the surface)",
     )
     try:
         with Store(default_db_path()) as store:
-            print(f"ok    feed {store.path} · {store.count()} posts")
+            report("ok", f"feed {store.path} · {store.count()} posts")
             return 0
     except Exception as exc:  # a broken feed file is the one failure that matters
-        print(f"MISS  feed {default_db_path()} · {exc}")
+        report("MISS", f"feed {default_db_path()} · {exc}")
         return 1
+
+
+def report(status: str, text: str) -> None:
+    """One `--doctor` line: the status in a fixed column, then what it is about."""
+    print(f"{status:<5}{text}")
 
 
 def install(args: list[str]) -> int:

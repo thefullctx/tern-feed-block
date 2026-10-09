@@ -89,7 +89,10 @@ feed --doctor            # what is installed, where the feed lives
 feed --mcp               # the MCP server itself (agents call this)
 ```
 
-`--agent` falls back to `FEED_BLOCK_AGENT`; the database defaults to
+Without `--agent`, the post is named after the agent running the command:
+`FEED_BLOCK_AGENT` when set, else the agent's own marker (Claude Code, Codex,
+OMP and pi are recognized; Hermes sets none yet, so name it with
+`FEED_BLOCK_AGENT`). The database defaults to
 `~/.feed-block/feed.db` and `FEED_BLOCK_DB` overrides it (tests use this).
 
 ## The surface
@@ -134,7 +137,8 @@ repository, and `feed hook install --repo PATH` installs them anywhere.
 - `post-commit` posts the commit with its diff stats, and
 - `post-merge` posts the merge,
 
-with the commit's author as the handle, the repository's name, and a commit
+with the agent that made the commit as the handle (detected as above, else
+the git author), the repository's name, and a commit
 link when the `origin` remote is on GitHub, GitLab or Bitbucket. A commit is
 posted once per link, so a replayed hook does not double-post, and an amend or
 a rebase in progress is skipped, since the original commit posted already. The
@@ -157,6 +161,7 @@ Tern pane ⇄ Surface Protocol ⇄ feed surface ⇄ SQLite ⇄ MCP server / CLI 
 | `src/feed_block/views.py` | The timeline as native nodes: rail, handles, wells, dividers, strip |
 | `src/feed_block/surface.py` | The live pane: the session loop, the watcher, the actions |
 | `src/feed_block/design.py`, `styles/feed.css` | The console-idiom stylesheet and its light/dark palette |
+| `src/feed_block/agents.py` | Which agent is running a command, from its environment |
 | `src/feed_block/colors.py` | Agent hues and kind glyphs, stable from a name alone |
 | `src/feed_block/reltime.py` | `2m`, `3h`, `oct 7` and the day dividers |
 
