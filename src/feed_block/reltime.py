@@ -1,6 +1,6 @@
-"""Time as the feed reads it: relative ages on the rail, day labels on dividers.
+"""Time as the feed reads it: relative ages in the posts, day labels on dividers.
 
-Local time, because the feed is a local timeline: the rail shows your clock,
+Local time, because the feed is a local timeline: it shows your clock,
 not UTC. Month names are lowercase and unpadded so "oct 7" is one token.
 """
 

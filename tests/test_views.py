@@ -1,4 +1,4 @@
-"""The timeline's nodes: the rail, the well, the strip, and the share summary."""
+"""The timeline's nodes: the avatar, the card, the strip, and the share summary."""
 
 from __future__ import annotations
 
@@ -45,6 +45,10 @@ def nodes(page) -> dict:
     return built(page).nodes()
 
 
+def gutter(node):
+    return [c for c in node.children if c.props.get("role") == "gutter"][0]
+
+
 def content(node):
     return [c for c in node.children if c.props.get("role") == "content"][0]
 
@@ -64,7 +68,7 @@ def chip_texts(tree) -> list[str]:
     return [n.props["text"] for n in tree.values() if n.props.get("role", "").startswith("chip")]
 
 
-def test_post_node_is_a_frameless_el_on_the_rail():
+def test_a_post_is_a_frameless_el():
     node = views.post_node(post(), HANDLERS, now=time.time(), newest=True)
     wire = node.to_json()
     assert wire["k"] == "el"
@@ -83,31 +87,78 @@ def test_failed_post_is_marked_and_keeps_its_kind():
     assert "fb-new" not in wire["p"]["class"].split()
 
 
-def test_head_line_is_handle_time_kind_then_actions():
+def test_head_line_is_name_handle_time_kind_then_actions():
     node = views.post_node(post(), HANDLERS, now=time.time(), newest=False)
     head = find(node, "head")
-    assert [c.props.get("role") for c in head.children] == ["handle", "time", "kind", "actions"]
-    assert [c.props.get("text") for c in head.children[:3]] == ["@hermes", "2m", "pr"]
+    assert [c.props.get("role") for c in head.children] == ["name", "handle", "time", "kind", "actions"]
+    assert [c.props.get("text") for c in head.children[:4]] == ["Hermes", "@hermes", "2m", "pr"]
 
 
-def test_a_continued_post_drops_its_handle():
+def test_a_continued_post_drops_its_handle_and_avatar():
     node = views.post_node(post(), HANDLERS, now=time.time(), newest=False, continued=True)
     assert [c.props.get("role") for c in find(node, "head").children] == ["time", "kind", "actions"]
     assert "fb-cont" in node.props["class"].split()
+    # The avatar column stays, empty, so the text lines up under the post above.
+    assert gutter(node).children == []
 
 
-def test_well_shows_repo_branch_ref_and_diff_without_the_url():
-    node = views.post_node(post(branch="main"), HANDLERS, now=time.time(), newest=False)
-    well = find(node, "well")
-    assert [c.props.get("role") for c in well.children] == [
-        "well-repo",
-        "well-branch",
-        "well-ref",
-        "well-diff",
+def test_a_post_joined_above_keeps_a_divider_only_when_its_thread_ends():
+    node = views.post_node(post(), HANDLERS, now=time.time(), newest=False, joined=True)
+    assert "fb-joined" in node.props["class"].split()
+    plain = views.post_node(post(), HANDLERS, now=time.time(), newest=False, joined=False)
+    assert "fb-joined" not in plain.props["class"].split()
+
+
+def test_the_avatar_is_the_initial_beside_the_kind_badge():
+    node = views.post_node(post(kind="merge"), HANDLERS, now=time.time(), newest=False)
+    column = gutter(node)
+    avatar = column.children[0]
+    assert column.props["role"] == "gutter" and avatar.props["role"] == "avatar"
+    letter, badge = avatar.children
+    assert (letter.props["role"], letter.props["text"]) == ("letter", "H")
+    assert (badge.props["role"], badge.props["text"]) == ("badge", "⋈")  # a join, not a check mark
+    assert content(node) is node.children[1]
+
+
+def test_a_failed_post_wears_the_failed_glyph():
+    node = views.post_node(post(kind="commit", status="failed"), HANDLERS, now=time.time(), newest=False)
+    badge = find(node, "avatar").children[1]
+    assert badge.props["text"] == "✗"
+
+
+def test_display_names_are_the_known_ones_or_the_name_title_cased():
+    assert [views.colors.display_name(a) for a in ("claude-code", "codex", "omp", "pi", "hermes")] == [
+        "Claude Code",
+        "Codex",
+        "OMP",
+        "pi",
+        "Hermes",
     ]
-    assert find(well, "well-ref").props["text"] == "#42"
-    assert (find(well, "diff-add").props["text"], find(well, "diff-del").props["text"]) == ("+120", "−34")
-    assert "github.com" not in str(well.to_json())
+    assert views.colors.display_name("my_agent-x") == "My Agent X"
+
+
+def test_the_card_shows_repo_branch_ref_and_diff_without_the_url():
+    node = views.post_node(post(branch="main"), HANDLERS, now=time.time(), newest=False)
+    card = find(node, "card")
+    assert [c.props.get("role") for c in card.children] == ["card-top", "card-diff"]
+    top = find(card, "card-top")
+    assert [c.props.get("role") for c in top.children] == ["card-repo", "card-branch", "card-ref"]
+    assert find(card, "card-ref").props["text"] == "#42"
+    diff = find(card, "card-diff")
+    assert [c.props.get("text") for c in diff.children] == ["▰" * 8, "▱" * 2, "+120", "−34"]
+    assert "github.com" not in str(card.to_json())
+
+
+def test_diff_bar_splits_ten_cells_between_the_sides():
+    assert views.diff_bar(486, 139) == (8, 2)
+    assert views.diff_bar(120, 34) == (8, 2)
+    assert views.diff_bar(40, 88) == (3, 7)
+    # A one-sided diff takes all ten; either non-zero side keeps one.
+    assert views.diff_bar(5, 0) == (10, 0)
+    assert views.diff_bar(0, 7) == (0, 10)
+    assert views.diff_bar(99, 1) == (9, 1)
+    assert views.diff_bar(1, 99) == (1, 9)
+    assert views.diff_bar(0, 0) == (0, 0)
 
 
 def test_reference_is_short():
@@ -119,11 +170,32 @@ def test_reference_is_short():
     assert views.reference(None) is None
 
 
-def test_well_is_skipped_without_anything_to_show():
+def test_card_is_skipped_without_anything_to_show():
     node = views.post_node(
         post(repo=None, link=None, additions=None, deletions=None), HANDLERS, now=time.time(), newest=False
     )
-    assert not any(c.props.get("role") == "well" for c in node.children)
+    assert not any(c.props.get("role") == "card" for c in content(node).children)
+    # A branch alone still makes a card, without a reference.
+    bare = views.post_node(
+        post(branch="main", repo=None, link=None, additions=None, deletions=None),
+        HANDLERS,
+        now=time.time(),
+        newest=False,
+    )
+    top = find(bare, "card-top")
+    assert top.children[0].props["role"] == "card-branch"
+    assert find(bare, "card-diff") is None
+
+
+def test_the_failed_card_still_carries_its_work():
+    node = views.post_node(
+        post(status="failed", branch="main", link=None, additions=None, deletions=None),
+        HANDLERS,
+        now=time.time(),
+        newest=False,
+    )
+    assert "fb-failed" in node.props["class"].split()
+    assert find(node, "card") is not None
 
 
 def test_body_is_one_muted_line():
@@ -131,30 +203,17 @@ def test_body_is_one_muted_line():
     assert find(node, "body").props["text"] == "first"
 
 
-def test_rail_column_carries_the_kind_glyph():
-    node = views.post_node(post(kind="merge"), HANDLERS, now=time.time(), newest=False)
-    rail = node.children[0]
-    assert rail.props["role"] == "rail"
-    assert rail.children[0].props["text"] == "⋈"  # a join, not a check mark
-    assert content(node) is node.children[1]
-
-
-def test_failed_post_wears_the_failed_glyph():
-    node = views.post_node(post(kind="commit", status="failed"), HANDLERS, now=time.time(), newest=False)
-    assert node.children[0].children[0].props["text"] == "✗"
-
-
 def test_actions_are_open_copy_share_and_open_needs_a_link():
     node = views.post_node(post(), HANDLERS, now=time.time(), newest=False)
     actions = find(node, "actions")
-    assert [c.props["text"] for c in actions.children] == ["open", "copy", "share"]
+    assert [c.props["text"] for c in actions.children] == ["↗ open", "⧉ copy", "⤴ share"]
 
     bare = views.post_node(post(link=None), HANDLERS, now=time.time(), newest=False)
     actions = find(bare, "actions")
-    assert [c.props["text"] for c in actions.children] == ["copy", "share"]
+    assert [c.props["text"] for c in actions.children] == ["⧉ copy", "⤴ share"]
 
 
-def test_every_kind_has_a_glyph_role():
+def test_every_post_carries_its_kind_on_its_root():
     for kind in ("commit", "pr", "merge", "test", "deploy", "note", "session"):
         node = views.post_node(post(kind=kind), HANDLERS, now=time.time(), newest=False)
         assert node.props["role"] == f"post-{kind}"
@@ -218,7 +277,7 @@ def test_filtering_everything_out_says_so():
     assert tree["main.feed.filtered"].props["role"] == "empty"
 
 
-def test_day_dividers_break_up_the_rail():
+def test_day_dividers_break_up_the_feed():
     today = int(time.time())
     older = today - 3 * 86400
     posts = [post(id=9, created_at=today), post(id=8, created_at=older, title="older work")]
@@ -230,7 +289,7 @@ def test_day_dividers_break_up_the_rail():
 
 
 def test_a_selected_agent_keeps_its_chip_after_its_posts_scroll_away():
-    # Only other agents' posts are on the rail, but the filter can still be cleared.
+    # Only other agents' posts are in the feed, but the filter can still be cleared.
     page = views.feed_view([post(agent="hermes")], ["hermes"], {"codex"}, HANDLERS)
     tree = nodes(page)
     chips = {
@@ -263,6 +322,11 @@ def test_a_sessions_posts_read_as_a_thread():
     assert "fb-cont" not in tree["main.feed.p3"].props["class"]
     assert "fb-cont" in tree["main.feed.p2"].props["class"]  # same session, right below
     assert "fb-cont" not in tree["main.feed.p1"].props["class"]
+    # The hairline yields between a post and the continued one below it only.
+    assert "fb-joined" in tree["main.feed.p3"].props["class"]
+    assert "fb-joined" not in tree["main.feed.p2"].props["class"]  # the thread ends here
+    assert "fb-joined" not in tree["main.feed.p1"].props["class"]
+    assert gutter(tree["main.feed.p2"]).children == []  # the thread's own avatar ran out
 
 
 def test_an_empty_diff_is_not_shown():

@@ -1,7 +1,8 @@
-/* feed-block: an X-shaped timeline in Tern's console idiom. One mono face on the pane's
-   cell grid; a rail runs down the left gutter with one glyph per post tinted by its agent;
-   hairlines instead of boxes; color is the only hierarchy. The timeline's text column is
-   inside the measure, and each post's own gutter carries the rail. Agent hues come from
+/* feed-block: a social feed in Tern's console idiom. One mono face on the pane's
+   cell grid; each post is two columns, an agent-tinted avatar with a kind badge
+   beside the text; hairlines instead of boxes; color is the only hierarchy. The
+   timeline's text column is inside the measure, and every post's avatar column
+   is the same width whether or not the post has an avatar. Agent hues come from
    the rules this sheet is joined with (colors.rules), so every agent keeps one muted
    color in light and dark. */
 [data-role='feed'] {
@@ -13,6 +14,7 @@
   --fb-faint: light-dark(#8f897d, #77716a);
   --fb-line: light-dark(#ded8cc, #3a3833);
   --fb-well: light-dark(#f4eee2, #23221f);
+  --fb-bg: light-dark(#f8f8f8, #0f1216);
   --fb-bad: var(--sf-bad, light-dark(#b4232c, #f87171));
   --fb-accent: light-dark(#6b4f9a, #c3a6e0);
   --fb-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -52,47 +54,65 @@
 [data-role='count'] { flex: 1 1 auto; text-align: right; }
 @keyframes fb-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-/* ---------- the rail: the gutter's glyph column, one hairline down its right edge */
-[data-role^='post'] { display: flex; flex-direction: row; gap: 0; padding: 8px 0 6px; }
-.fb-cont[data-role^='post'] { padding-top: 0; }
-[data-role='rail'] {
-  flex: 0 0 auto; align-self: stretch; width: calc(2 * var(--fb-cw)); text-align: center;
-  color: var(--fb-agent, var(--fb-faint)); box-shadow: inset -1px 0 0 var(--fb-line); }
-[data-role='glyph'] { font: inherit; line-height: var(--fb-lh); color: inherit; }
-/* a failed post: a red glyph on a red edge, and a red title */
-.fb-failed [data-role='rail'] { color: var(--fb-bad); box-shadow: inset -2px 0 0 var(--fb-bad); }
-[data-role='content'] { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0;
-  padding-left: 10px; }
+/* ---------- a post: two columns, the avatar and the content; a hairline under it */
+[data-role^='post'] { display: flex; flex-direction: row; gap: 0; padding: 12px 0;
+  box-shadow: inset 0 -1px 0 var(--fb-line); }
+/* the hover wash: the full width, avatar included */
+[data-role^='post']:hover { background: color-mix(in srgb, var(--fb-ink) 3%, transparent); }
+.fb-cont[data-role^='post'] { padding-top: 4px; }
+/* a thread continues right below: no hairline under the post above it */
+.fb-joined[data-role^='post'] { box-shadow: none; }
+/* the avatar column: fixed on every post; a continuation keeps it, empty */
+[data-role='gutter'] { flex: 0 0 40px; align-self: stretch; }
+[data-role='avatar'] { position: relative; display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: color-mix(in srgb, var(--fb-agent) 22%, transparent); color: var(--fb-agent, var(--fb-ink)); }
+[data-role='letter'] { font: inherit; font-size: 14px; font-weight: 650; line-height: 1; }
+/* the kind's badge rides the avatar's lower right edge, punched out of the pane */
+[data-role='badge'] { position: absolute; right: -3px; bottom: -3px; width: 14px; height: 14px;
+  display: flex; align-items: center; justify-content: center; border-radius: 50%;
+  background: var(--fb-bg); box-shadow: inset 0 0 0 1px var(--fb-line); color: var(--fb-agent, var(--fb-faint));
+  font-size: 9px; font-weight: 600; line-height: 1; }
+.fb-failed [data-role='badge'] { color: var(--fb-bad); }
+[data-role='content'] { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0; }
 [data-role='content'] > * { position: relative; }
-.fb-new [data-role='glyph'] { animation: fb-pop 420ms var(--fb-pop) both; }
+.fb-new [data-role='avatar'] { animation: fb-pop 420ms var(--fb-pop) both; }
 @keyframes fb-pop { 0% { opacity: 0; transform: scale(0.3); } 60% { opacity: 1; transform: scale(1.3); }
   100% { opacity: 1; transform: scale(1); } }
 
-/* ---------- a post: @handle · 2m · kind, the title, then body and well on one line */
-.sf.sf-row[data-role='head'] { align-items: baseline; gap: 0; min-height: var(--fb-lh); }
-[data-role='head'] .sf-text { font: inherit; line-height: var(--fb-lh); }
-[data-role='handle'] { color: var(--fb-agent, var(--fb-ink)); font-weight: 600; }
+/* a post's head: Name  @handle · 2m · kind, the actions at the right. Items hold one line
+   each; the row wraps between them when the pane is narrow, actions first under it. */
+.sf.sf-row[data-role='head'] { align-items: baseline; gap: 0; min-height: var(--fb-lh); flex-wrap: wrap; }
+[data-role='head'] .sf-text { font: inherit; line-height: var(--fb-lh); white-space: nowrap; }
+[data-role='name'] { color: var(--fb-agent, var(--fb-ink)); font-weight: 650; }
+[data-role='handle'] { color: var(--fb-muted); }
 [data-role='time'], [data-role='kind'] { color: var(--fb-faint); }
+[data-role='name'] + [data-role='handle'] { margin-left: calc(2 * var(--fb-cw)); }
 [data-role='handle'] + [data-role='time']::before,
 [data-role='kind']::before { content: '·'; margin: 0 var(--fb-cw); color: var(--fb-faint); }
-.sf.sf-text[data-role='title'] { font: inherit; line-height: var(--fb-lh); color: var(--fb-ink); }
+.sf.sf-text[data-role='title'] { font: inherit; font-size: calc(var(--sf-fs, 13px) + 1px);
+  line-height: var(--fb-lh); color: var(--fb-ink); }
 .fb-failed .sf.sf-text[data-role='title'] { color: color-mix(in srgb, var(--fb-bad) 70%, var(--fb-ink)); }
-.sf.sf-row[data-role='details'] { align-items: baseline; gap: 0 10px; min-width: 0; flex-wrap: wrap; }
 .sf.sf-text[data-role='body'] { font: inherit; line-height: var(--fb-lh); color: var(--fb-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
-/* the well: where the work lives, raised with a hairline edge */
-.sf.sf-row[data-role='well'] {
-  flex: 0 0 auto; align-items: baseline; gap: 0; margin: 1px 0; padding: 0 8px;
-  border-radius: 5px; background: var(--fb-well); box-shadow: inset 0 0 0 1px var(--fb-line);
-  color: var(--fb-muted); line-height: calc(var(--fb-lh) - 2px); }
-[data-role='well'] .sf-text { font: inherit; color: inherit; line-height: inherit; }
-[data-role='well'] > * + *::before { content: '·'; margin: 0 var(--fb-cw); color: var(--fb-faint); }
-[data-role='well-repo'] { color: var(--fb-agent, var(--fb-ink)); }
-[data-role='well-ref'] { color: var(--fb-ink); }
-.sf.sf-row[data-role='well-diff'] { gap: 0; align-items: baseline; }
-[data-role='diff-del'] { margin-left: var(--fb-cw); }
-[data-role='diff-add'] { color: var(--fb-ok, light-dark(#3f7d4a, #8fc79a)); }
-[data-role='diff-del'] { color: var(--fb-bad); }
+/* the card: where the work lives, raised a hair and closed by a hairline */
+.sf.sf-col[data-role='card'] { align-items: stretch; gap: 0; margin-top: 6px; padding: 6px 10px;
+  max-width: 560px; border-radius: 6px; background: var(--fb-well);
+  box-shadow: inset 0 0 0 1px var(--fb-line); }
+.sf.sf-row[data-role='card-top'] { align-items: baseline; gap: 0; }
+.sf.sf-row[data-role='card-diff'] { align-items: baseline; gap: 0; margin-top: 2px; }
+[data-role='card-repo'] { color: var(--fb-agent, var(--fb-ink)); }
+[data-role='card-branch'] { color: var(--fb-muted); }
+[data-role='card-repo'] + [data-role='card-branch']::before { content: '·'; margin: 0 var(--fb-cw);
+  color: var(--fb-muted); }
+[data-role='card-ref'] { margin-left: auto; color: var(--fb-ink); }
+[data-role='diff-bar-add'] { color: var(--fb-ok, light-dark(#3f7d4a, #8fc79a)); }
+[data-role='diff-bar-del'] { color: var(--fb-bad); }
+[data-role='diff-add'] { margin-left: calc(2 * var(--fb-cw)); color: var(--fb-ok, light-dark(#3f7d4a, #8fc79a)); }
+[data-role='diff-del'] { margin-left: var(--fb-cw); color: var(--fb-bad); }
+/* a failed card: the ring takes the failure's hue, half-way home */
+.fb-failed .sf.sf-col[data-role='card'] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fb-bad) 45%, var(--fb-line)); }
 
 /* ---------- actions: at the head's right edge, only on hover or focus */
 .sf.sf-row[data-role='actions'] {
@@ -104,7 +124,7 @@
 [data-role='action'] { cursor: pointer; }
 [data-role='action']:hover { color: var(--fb-ink); }
 
-/* ---------- day dividers: a label on the rail's hairline */
+/* ---------- day dividers: a label on a dotted hairline */
 .sf.sf-row[data-role='day'] { align-items: center; gap: 8px; padding: 14px 0 0; }
 [data-role='day-label'] { font: inherit; line-height: var(--fb-lh); color: var(--fb-faint); }
 [data-role='day']::before { content: '─'; color: var(--fb-line); }
@@ -116,7 +136,7 @@
 .sf.sf-text[data-role='empty'] { font: inherit; line-height: var(--fb-lh); color: var(--fb-faint);
   padding: 24px 0; }
 
-/* ---------- motion: posts rise in, the rail grows with them; quiet and fast */
+/* ---------- motion: posts rise in, the avatar pops with them; quiet and fast */
 [data-role^='post'] { animation: fb-rise 260ms var(--fb-out) both; }
 [data-role='day'] { animation: fb-fade 300ms var(--fb-out) both; }
 @keyframes fb-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
@@ -125,8 +145,8 @@
 /* hidden or covered panes hold their frame; Still and Reduce Motion show final states */
 .sf-paused [data-role='feed'] *, .sf-covered [data-role='feed'] * { animation-play-state: paused; }
 .sf-still [data-role^='post'], .sf-still [data-role='day'], .sf-still [data-role='live-fresh'],
-.sf-still .fb-new [data-role='glyph'] { animation: none; }
+.sf-still .fb-new [data-role='avatar'] { animation: none; }
 @media (prefers-reduced-motion: reduce) {
   [data-role^='post'], [data-role='day'], [data-role='live-fresh'],
-  .fb-new [data-role='glyph'] { animation: none; }
+  .fb-new [data-role='avatar'] { animation: none; }
 }
