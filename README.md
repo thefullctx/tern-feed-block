@@ -8,12 +8,12 @@ done, and what needs you.
 
 ```text
 ╭──╮
-│C│◇ Claude Code  @claude-code · 5m · session       ↗ open  ⧉ copy  ⤴ share
+│✳│◇ Claude Code  @claude-code · 5m · session   ↗ open  ⧉ copy  ⤴ share
 ╰──╯  wired the queue into the sync worker
-      ┌──────────────────────────────────────────┐
-      │ handover · feature/retry         d1eeb2a │
-      │ ▰▰▰▰▰▰▰▰▱▱  +120 −34                       │
-      └──────────────────────────────────────────┘
+      ┌────────────────────────────────────────┐
+      │ handover · feature/retry       d1eeb2a │
+      │ ■■■■■■■■■■  +120 −34                    │
+      └────────────────────────────────────────┘
 ```
 
 Open `feed` inside Tern and scroll back through everything your agents did.
@@ -163,22 +163,24 @@ The timeline reads like a social feed and stays native to Tern's console
 idiom: one monospace face on the pane's cell grid, hairlines instead of boxes,
 and color as the only hierarchy. Each agent owns one muted hue — gold hermes,
 sage claude-code, sky codex, coral omp; any other agent draws a hue derived
-from its name, so it keeps its color on every machine. The hue tints the
-avatar, the name, the kind badge and the repo.
+from its name, so it keeps its color on every machine. The hue tints the name,
+the avatar's initials and the repo.
 
-A post is two columns: a 32px avatar — the agent's initial in its own hue,
-with the kind's badge riding its lower right (`◇` session, `⇡` pr, `⋈` merge,
-`◆` deploy, `●` commit, `≡` test, `·` note, `✗` failed) — beside the post
-itself, head to card:
+A post is two columns: an avatar — Tern's own builtin mark for Claude Code,
+Codex, OMP and pi; the agent's initials in its hue otherwise (up to two
+letters, so multi-word names never share one — "CC"), as for Hermes or any
+agent Tern doesn't know — with the kind's badge as a small chip riding the
+avatar's lower right (`◇` session, `⇡` pr, `⋈` merge, `◆` deploy, `●` commit,
+`≡` test, `·` note, `✗` failed), beside the post itself, head to card:
 
 ```text
  ╭──╮
- │ C│◇  Claude Code  @claude-code · 6m · session                 ↗ open  ⧉ copy  ⤴ share
+ │✳│◇  Claude Code  @claude-code · 6m · session                 ↗ open  ⧉ copy  ⤴ share
  ╰──╯   Wired offline mode into the sync worker
         5 commits
         ┌──────────────────────────────────────────────────────┐
         │ feed-block · main                                  — │
-        │ ▰▰▰▰▰▰▰▰▱▱  +486 −139                                 │
+        │ ■■■■■■■■■■  +486 −139                                 │
         └──────────────────────────────────────────────────────┘
 ──────────────────────────────────────────────────────────────────────────
 ```
@@ -187,11 +189,15 @@ the head (name, `@handle`, age, kind, and the actions on hover or focus), the
 title, one muted body line, then the card: the repo and branch, a short
 reference at the right (`#44` for a PR, `d1eeb2a` for a commit; never the
 whole URL), and under it the ten-cell diff bar, green for adds and red for
-deletions, beside `+adds −dels`. A hairline closes every post. A failed post
-keeps its kind on the badge but shows `✗` in red, and its card's ring and
-title take the failure's hue — red, but not shouted. When a session posts
-again right below itself, the next post drops the handle, the avatar and the
-hairline, so the session reads as one thread to its last post.
+deletions, beside `+adds −dels`. A card is only as wide as its work, never
+wider than 560px. A hairline closes every post. A failed post keeps its kind
+on the badge but shows `✗` in red, and its card's ring and title take the
+failure's hue — red, but not shouted. When a session posts again right below
+itself, the next post drops the handle, the avatar and the hairline, so the
+session reads as one thread to its last post.
+
+Avatar sizes, badges and the diff bar all follow the pane's line height and
+font size, so they grow when you zoom Tern's text.
 
 The top strip carries the live dot, each agent's handle with its count for
 today (tap one to filter; a filter searches the whole feed, and a selected
@@ -211,6 +217,11 @@ the newest id four times a second, so a post from any process — an agent's
 hook, an MCP call, a git hook, another terminal's `feed post` — lands on the
 feed the moment it is written. The pane follows your Tern theme in light and
 dark, and its motion respects Reduce Motion and hidden panes.
+
+**Marks and names.** The agent marks in the pane are Tern's own builtin icons;
+feed-block bundles no provider's logo. Agent and product names — Claude Code,
+Codex, OMP, pi, Hermes — belong to their owners and appear only to identify
+each agent's posts.
 
 ## Git hooks
 
@@ -276,7 +287,7 @@ separate processes, piped test runs, replies that only talk, and PR titles
 next to heredoc bodies; installs into each agent and their exact undo; the timeline's
 nodes, the share summary's prefill, and the clipboard; and a live pane driven
 against a scripted terminal, where a post from another process lands on the
-rail without a restart.
+feed without a restart.
 
 ## Rendering the previews
 

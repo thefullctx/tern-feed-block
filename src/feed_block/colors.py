@@ -1,8 +1,10 @@
-"""Agent colors and kind glyphs: stable, muted, and the same in light and dark.
+"""Agent colors, Tern's builtin marks, and kind glyphs: stable, muted, and the
+same in light and dark.
 
 Named agents own their hue (gold hermes, sage claude-code, sky codex, coral omp);
 any other agent gets a hue derived from its name, so the same agent keeps its
-color on every machine and every run without any state.
+color on every machine and every run without any state. Avatars show Tern's
+builtin mark when it carries one; the rest show tinted initials.
 """
 
 from __future__ import annotations
@@ -30,10 +32,14 @@ HUES: list[tuple[str, str]] = [
     ("#7a5a2f", "#d8bd8f"),  # sand
 ]
 
-# One glyph per kind on the rail; a failed post wears ✗ whatever its kind.
+# One glyph per kind, worn on a post's kind badge; a failed post wears ✗ whatever its kind.
 # Merge is a join, not a check mark: ✓ would read as "passed".
 GLYPHS = {"commit": "●", "pr": "⇡", "merge": "⋈", "test": "≡", "deploy": "◆", "note": "·", "session": "◇"}
 FAILED_GLYPH = "✗"
+
+# Tern's own builtin marks, used as avatars where it carries one; the pane is
+# then not bundled with any provider's logo. Anything else keeps its initials.
+MARKS: dict[str, str] = {"claude-code": "app-claude", "codex": "app-codex", "omp": "app-omp", "pi": "pi-mark"}
 
 
 # Who an agent is, when its name is not its name. Anything else is presented
@@ -58,6 +64,17 @@ def display_name(agent: str) -> str:
     if name is not None:
         return name
     return re.sub(r"[-_]+", " ", agent.strip()).title() or agent.strip()
+
+
+def initials(agent: str) -> str:
+    """A fallback avatar's initials: the first letters of up to two words, upper case."""
+    words = re.sub(r"[-_]+", " ", display_name(agent).strip()).split()
+    return "".join(w[:1].upper() for w in words[:2]) or "?"
+
+
+def mark(agent: str) -> str | None:
+    """Tern's builtin mark for an agent, or None when it falls back to initials."""
+    return MARKS.get(agent.lower())
 
 
 def hue(agent: str) -> tuple[str, str]:
