@@ -36,9 +36,28 @@ GLYPHS = {"commit": "●", "pr": "⇡", "merge": "⋈", "test": "≡", "deploy":
 FAILED_GLYPH = "✗"
 
 
+# Who an agent is, when its name is not its name. Anything else is presented
+# title-cased, so `my-agent` becomes "My Agent".
+DISPLAY_NAMES: dict[str, str] = {
+    "claude-code": "Claude Code",
+    "codex": "Codex",
+    "omp": "OMP",
+    "pi": "pi",
+    "hermes": "Hermes",
+}
+
+
 def slug(agent: str) -> str:
     """A CSS-safe fragment of an agent name."""
     return re.sub(r"[^a-z0-9]+", "-", agent.lower()).strip("-") or "agent"
+
+
+def display_name(agent: str) -> str:
+    """An agent as the feed presents it: the known name, else the name title-cased."""
+    name = DISPLAY_NAMES.get(agent.lower())
+    if name is not None:
+        return name
+    return re.sub(r"[-_]+", " ", agent.strip()).title() or agent.strip()
 
 
 def hue(agent: str) -> tuple[str, str]:

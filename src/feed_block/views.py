@@ -1,10 +1,11 @@
-"""The timeline as native nodes: the rail, day dividers, the filter strip.
+"""The timeline as native nodes: avatars, day dividers, the filter strip.
 
-X's structure in Tern's console idiom, three lines a post: `@handle · 2m · kind`
-(actions at the right, on hover or focus only), the title, then a muted body
-beside a raised well (repo · branch · #42 · +adds −dels). The rail is a
-hairline in the gutter with one glyph per post, tinted by the agent's color;
-a session posting again right below itself drops its handle, as a thread.
+A social feed in Tern's console idiom, one post per line pair: an agent-tinted
+avatar with its kind badge beside a head line (name `@handle` · 2m · kind, the
+actions pushed right, on hover or focus only), the title, a muted body and the
+card (repo · branch, the short reference, the diff bar). A hairline closes
+every post but one: a session posting again right below itself continues the
+thread instead, under the same avatar column, until its last post.
 """
 
 from __future__ import annotations
@@ -72,6 +73,54 @@ def reference(link: str | None) -> str | None:
     return urlsplit(link).netloc or None
 
 
+def diff_bar(adds: int | None, dels: int | None) -> tuple[int, int]:
+    """A ten-cell bar as (green cells, red cells) for `+adds −dels`.
+
+    Green takes `round(10 * adds / (adds + dels))`, clamped so either non-zero
+    side keeps at least one cell; a one-sided diff takes all ten. Nothing when
+    there is no diff at all.
+    """
+    adds, dels = adds or 0, dels or 0
+    if not adds and not dels:
+        return (0, 0)
+    if not dels:
+        return (10, 0)
+    if not adds:
+        return (0, 10)
+    green = max(1, min(9, round(10 * adds / (adds + dels))))
+    return (green, 10 - green)
+
+
+def _card(post: Post) -> ui.Node | None:
+    """The work card: repo · branch with the short reference at the right, then the diff bar."""
+    top: list[ui.Node] = []
+    if post.repo:
+        top.append(ui.text(post.repo, role="card-repo", key="r"))
+    if post.branch:
+        top.append(ui.text(post.branch, role="card-branch", key="br"))
+    ref = reference(post.link)
+    if ref:
+        top.append(ui.text(ref, role="card-ref", key="n"))
+    if top:
+        # The reference reads to the right, away from the work.
+        rows = [ui.row(*top, role="card-top", key="top")]
+    else:
+        rows = []
+    green, red = diff_bar(post.additions, post.deletions) if post.diffstat else (0, 0)
+    if green or red:
+        rows.append(
+            ui.row(
+                ui.text("▰" * green, role="diff-bar-add", key="ga"),
+                ui.text("▱" * red, role="diff-bar-del", key="gr"),
+                ui.text(f"+{post.additions or 0}", role="diff-add", key="a"),
+                ui.text(f"−{post.deletions or 0}", role="diff-del", key="d"),
+                role="card-diff",
+                key="df",
+            )
+        )
+    return ui.col(*rows, role="card", key="w") if rows else None
+
+
 def _action(label: str, title: str, run: Callable[[], object], key: str) -> ui.Node:
     return ui.text(label, role="action", key=key, title=title, on_click=lambda _: run())
 
@@ -84,11 +133,14 @@ def post_node(
     newest: bool,
     handle: str | None = None,
     continued: bool = False,
+    joined: bool = False,
 ) -> ui.Node:
-    """One post on the rail: the glyph, a head line, the title, then the details in one line.
+    """One post: an avatar with its kind badge, beside the head line, title, body and card.
 
-    `continued` is the same session posting again right below: the head drops the
-    handle, so a run of one session's posts reads as one thread.
+    `continued` is the same session posting again right below: it keeps the
+    empty avatar column but no avatar, so its text lines up under the post
+    above. `joined` is the mirror image — the post below is continued — and
+    drops the hairline under this post, so the thread reads as one unit.
     """
     classes = [colors.agent_class(post.agent)]
     if post.failed:
@@ -97,57 +149,44 @@ def post_node(
         classes.append("fb-new")
     if continued:
         classes.append("fb-cont")
+    if joined:
+        classes.append("fb-joined")
     head = []
     if not continued:
-        head.append(
-            ui.html.span(
-                handle or f"@{post.agent}", class_=colors.agent_class(post.agent), role="handle", key="h"
-            )
-        )
+        head.append(ui.html.span(colors.display_name(post.agent), role="name", key="n"))
+        head.append(ui.html.span(handle or f"@{post.agent}", role="handle", key="h"))
     head.append(ui.text(relative(post.created_at, now), role="time", key="t"))
     head.append(ui.text(post.kind, role="kind", key="k"))
     actions = []
     if post.link:
-        actions.append(_action("open", "open the link", lambda p=post: handlers.open(p), "open"))
-    actions.append(_action("copy", "copy the post", lambda p=post: handlers.copy(p), "copy"))
-    actions.append(_action("share", "share on X", lambda p=post: handlers.share(p), "share"))
+        actions.append(_action("↗ open", "open the link", lambda p=post: handlers.open(p), "open"))
+    actions.append(_action("⧉ copy", "copy the post", lambda p=post: handlers.copy(p), "copy"))
+    actions.append(_action("⤴ share", "share on X", lambda p=post: handlers.share(p), "share"))
     head.append(ui.row(*actions, role="actions", key="ac"))
     children = [ui.row(*head, role="head", key="head"), ui.text(post.title, role="title", key="ti")]
-
-    # The details: the body (muted), then the well: repo · branch · ref · +adds −dels.
-    details = []
+    # The body: one muted line, between the title and the card.
     if post.body:
-        details.append(ui.text(post.body.splitlines()[0], role="body", key="b"))
-    well = []
-    if post.repo:
-        well.append(ui.text(post.repo, role="well-repo", key="r"))
-    if post.branch:
-        well.append(ui.text(post.branch, role="well-branch", key="br"))
-    ref = reference(post.link)
-    if ref:
-        well.append(ui.text(ref, role="well-ref", key="n"))
-    if post.diffstat:
-        well.append(
-            ui.row(
-                ui.text(f"+{post.additions or 0}", role="diff-add", key="a"),
-                ui.text(f"−{post.deletions or 0}", role="diff-del", key="d"),
-                role="well-diff",
-                key="df",
+        children.append(ui.text(post.body.splitlines()[0], role="body", key="b"))
+    # The card: the work at the right height, or nothing when there is none.
+    card = _card(post)
+    if card:
+        children.append(card)
+    gutter: list[ui.Node] = []
+    if not continued:
+        # The avatar: the agent's initial in its own hue, and the kind's badge
+        # where the rail's glyph used to be, on the circle's lower right edge.
+        gutter.append(
+            ui.html.div(
+                ui.text(colors.display_name(post.agent)[:1].upper(), role="letter", key="l"),
+                ui.html.span(colors.glyph(post.kind, post.failed), role="badge", key="bg"),
+                role="avatar",
+                key="av",
             )
         )
-    if well:
-        details.append(ui.row(*well, role="well", key="w"))
-    if details:
-        children.append(ui.row(*details, role="details", key="de"))
     return ui.html.div(
-        # The rail: the kind's glyph, on a hairline that runs the post's full height.
-        ui.html.div(
-            ui.text(colors.glyph(post.kind, post.failed), role="glyph", key="g"),
-            class_="fb-rail",
-            role="rail",
-            key="rail",
-        ),
-        ui.html.div(*children, class_="fb-content", role="content", key="c"),
+        # The avatar column: the same width on every post, empty on continuations.
+        ui.html.div(*gutter, role="gutter", key="gu"),
+        ui.html.div(*children, role="content", key="c"),
         class_=" ".join(classes),
         role=f"post-{post.kind}",
         key=f"p{post.id}",
@@ -251,10 +290,12 @@ def feed_view(
         for index, (key, (label, day)) in enumerate(groups.items()):
             body.append(ui.row(ui.text(label, role="day-label", key=f"dl{index}"), role="day", key=f"d{key}"))
             above: Post | None = None
-            for post in day:
-                # A session posting again right below itself reads as one thread.
+            for position, post in enumerate(day):
+                below = day[position + 1] if position + 1 < len(day) else None
+                # A session posting again right below itself reads as one thread:
+                # no handle and no avatar on it, and no hairline under its last run.
                 continued = bool(
-                    above and post.session and (above.agent, above.session) == (post.agent, post.session)
+                    post.session and above and (above.agent, above.session) == (post.agent, post.session)
                 )
                 body.append(
                     post_node(
@@ -264,6 +305,11 @@ def feed_view(
                         newest=post.id == newest,
                         handle=labels.handle(post, numbers),
                         continued=continued,
+                        joined=bool(
+                            post.session
+                            and below
+                            and (post.agent, post.session) == (below.agent, below.session)
+                        ),
                     )
                 )
                 above = post

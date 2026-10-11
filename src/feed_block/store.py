@@ -128,7 +128,7 @@ def _title(title: str) -> str:
     title = str(title or "").strip()
     if not title:
         raise ValueError("title is required")
-    # One line on the rail; bodies carry the rest.
+    # One line in the feed; bodies carry the rest.
     return title.splitlines()[0].strip()
 
 

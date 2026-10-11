@@ -7,10 +7,13 @@ that speaks MCP — shows up on one local feed, with results only: what got
 done, and what needs you.
 
 ```text
-@claude-code   5m  ✗ session  wired the queue into the sync worker · handover · feature/retry · +120 −34
-                              tests still failing · pytest · 2 failed · 3 commits
-@omp¹         12m    pr       opened PR #44 Retry queue · handover · feature/retry
-@omp²         20m    deploy   deployed handover with fly · handover · main
+╭──╮
+│C│◇ Claude Code  @claude-code · 5m · session       ↗ open  ⧉ copy  ⤴ share
+╰──╯  wired the queue into the sync worker
+      ┌──────────────────────────────────────────┐
+      │ handover · feature/retry         d1eeb2a │
+      │ ▰▰▰▰▰▰▰▰▱▱  +120 −34                       │
+      └──────────────────────────────────────────┘
 ```
 
 Open `feed` inside Tern and scroll back through everything your agents did.
@@ -156,34 +159,46 @@ OMP and pi are recognized; Hermes sets none yet, so name it with
 
 ## The surface
 
-The timeline follows X's structure in Tern's console idiom: one monospace face
-on the pane's cell grid, a rail down the left gutter with one glyph per post
-(`◇` session, `⇡` pr, `⋈` merge, `◆` deploy, `●` commit, `≡` test, `·` note,
-`✗` failed), hairlines instead of boxes, and color as the only hierarchy. Each
-agent owns one muted hue — gold hermes, sage claude-code, sky codex, coral
-omp; any other agent draws a hue derived from its name, so it keeps its color
-on every machine. The hue tints the `@handle`, its glyph and its repo.
+The timeline reads like a social feed and stays native to Tern's console
+idiom: one monospace face on the pane's cell grid, hairlines instead of boxes,
+and color as the only hierarchy. Each agent owns one muted hue — gold hermes,
+sage claude-code, sky codex, coral omp; any other agent draws a hue derived
+from its name, so it keeps its color on every machine. The hue tints the
+avatar, the name, the kind badge and the repo.
 
-A post is three lines:
+A post is two columns: a 32px avatar — the agent's initial in its own hue,
+with the kind's badge riding its lower right (`◇` session, `⇡` pr, `⋈` merge,
+`◆` deploy, `●` commit, `≡` test, `·` note, `✗` failed) — beside the post
+itself, head to card:
 
 ```text
-◇ @omp¹ · 38m · session                                   open  copy  share
-  Added a retry queue for failed syncs
-  3 commits  [ handover · feature/retry · +340 −52 ]
+ ╭──╮
+ │ C│◇  Claude Code  @claude-code · 6m · session                 ↗ open  ⧉ copy  ⤴ share
+ ╰──╯   Wired offline mode into the sync worker
+        5 commits
+        ┌──────────────────────────────────────────────────────┐
+        │ feed-block · main                                  — │
+        │ ▰▰▰▰▰▰▰▰▱▱  +486 −139                                 │
+        └──────────────────────────────────────────────────────┘
+──────────────────────────────────────────────────────────────────────────
 ```
 
-the head (handle, age, kind, and the actions on hover or focus), the title,
-then the body and the well: repo, branch, a short reference (`#44` for a PR,
-`d1eeb2a` for a commit; never the whole URL) and `+adds −dels`. A failed post
-gets a red glyph on a red edge and a red title. When a session posts again
-right below itself, the second post drops the handle, so a session reads as
-one thread.
+the head (name, `@handle`, age, kind, and the actions on hover or focus), the
+title, one muted body line, then the card: the repo and branch, a short
+reference at the right (`#44` for a PR, `d1eeb2a` for a commit; never the
+whole URL), and under it the ten-cell diff bar, green for adds and red for
+deletions, beside `+adds −dels`. A hairline closes every post. A failed post
+keeps its kind on the badge but shows `✗` in red, and its card's ring and
+title take the failure's hue — red, but not shouted. When a session posts
+again right below itself, the next post drops the handle, the avatar and the
+hairline, so the session reads as one thread to its last post.
 
 The top strip carries the live dot, each agent's handle with its count for
 today (tap one to filter; a filter searches the whole feed, and a selected
 handle stays so it can always be cleared), `✗ N failed today` when anything
 failed, and the post count. Day dividers ("today", "yesterday", "oct 7")
-break up the rail. New posts rise in at the top; `q` leaves.
+break up the feed. New posts rise in at the top, their avatar popping in;
+`q` leaves.
 
 **Share** opens `https://x.com/intent/tweet?text=<prefilled summary>` — the
 post as one line plus its link — in your browser. No X API and no keys: you
@@ -194,7 +209,7 @@ link when it is an `http(s)` URL; other schemes (`file:`, app links) are refused
 New posts appear live, without a restart: the surface polls the local file for
 the newest id four times a second, so a post from any process — an agent's
 hook, an MCP call, a git hook, another terminal's `feed post` — lands on the
-rail the moment it is written. The pane follows your Tern theme in light and
+feed the moment it is written. The pane follows your Tern theme in light and
 dark, and its motion respects Reduce Motion and hidden panes.
 
 ## Git hooks
@@ -234,11 +249,11 @@ Tern pane ⇄ Surface Protocol ⇄ feed surface ⇄ SQLite ⇄ agent hooks / MCP
 | `src/feed_block/config.py` | `config.toml`: post switches, git commits, extra test and deploy commands |
 | `src/feed_block/gitutil.py` | Read-only git plumbing: roots, branches, diffs, commit links |
 | `src/feed_block/labels.py` | Handles, with session numbers when an agent ran several that day |
-| `src/feed_block/views.py` | The timeline as native nodes: rail, handles, wells, dividers, strip |
+| `src/feed_block/views.py` | The timeline as native nodes: avatars, cards, handles, dividers, strip |
 | `src/feed_block/surface.py` | The live pane: the session loop, the watcher, the actions |
 | `src/feed_block/design.py`, `styles/feed.css` | The console-idiom stylesheet and its light/dark palette |
 | `src/feed_block/agents.py` | Which agent and session is running a command, from its environment |
-| `src/feed_block/colors.py` | Agent hues and kind glyphs, stable from a name alone |
+| `src/feed_block/colors.py` | Agent hues, their display names and kind glyphs, stable from a name alone |
 | `src/feed_block/reltime.py` | `2m`, `3h`, `oct 7` and the day dividers |
 
 The store is the only state, sessions included. Every writer (agent hook, MCP, CLI, git hook) is a separate

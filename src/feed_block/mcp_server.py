@@ -42,7 +42,7 @@ POST_SCHEMA: dict[str, Any] = {
         },
         "title": {
             "type": "string",
-            "description": "One line, e.g. 'pushed PR #42 to handover'. The feed's rail shows this.",
+            "description": "One line, e.g. 'pushed PR #42 to handover'. Shown as the post's title.",
         },
         "body": {"type": "string", "description": "Optional detail, shown muted under the title."},
         "repo": {"type": "string", "description": "Repository or project name, e.g. 'handover'."},
