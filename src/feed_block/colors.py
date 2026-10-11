@@ -39,7 +39,13 @@ FAILED_GLYPH = "✗"
 
 # Tern's own builtin marks, used as avatars where it carries one; the pane is
 # then not bundled with any provider's logo. Anything else keeps its initials.
-MARKS: dict[str, str] = {"claude-code": "app-claude", "codex": "app-codex", "omp": "app-omp", "pi": "pi-mark"}
+MARKS: dict[str, str] = {
+    "claude-code": "app-claude",
+    "codex": "app-codex",
+    "omp": "app-omp",
+    "pi": "pi-mark",
+    "hermes": "tile-hermes",
+}
 
 
 # Who an agent is, when its name is not its name. Anything else is presented
