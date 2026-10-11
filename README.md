@@ -42,7 +42,8 @@ feed --install                 # sets up the agents it finds, after asking
 ```
 
 `--doctor` reports the Python and SDK versions, the tern binary, the git hooks
-of the repository you are in, and where the feed lives.
+of the repository you are in, each agent installed for you and whether it is
+set up (and how it posts), and where the feed lives.
 
 `feed --install` looks for the agents installed for your user, shows what it
 will change for each, and asks before changing anything (`--yes` skips the
@@ -66,10 +67,13 @@ running agent sessions to pick the change up.
 Results, not activity, so a day of several agents fits on one screen:
 
 1. **One summary per session**, once the session changed something in a
-   repository: the agent's own one-line account of what it did, the repo and
-   branch, `+adds −dels` since the session started, and the commit count. It
-   is replaced (and moves to the top) as the session goes on, so a session
-   is always one post. It turns red when the session's last test run failed.
+   repository: the agent's own one-line account of what it did (its first
+   statement; a question back to you is skipped), the repo and branch,
+   `+adds −dels` since the session started, and the commit count. It is
+   replaced, and moves to the top, only when the work changes: a reply that
+   only talks leaves it where it is, so a session is always one post. It
+   turns red when the session's last test run failed, read from the runner's
+   own count, so `pytest | tail` still counts.
 2. **A PR opened** (`gh pr create`), with its link.
 3. **A PR merged** (`gh pr merge`, or a merge through the git hooks).
 4. **A deploy** (`fly deploy`, `vercel --prod`, `wrangler deploy` and the
@@ -94,7 +98,7 @@ is whose. Agents in separate worktrees each get their own.
 [git]
 commits = false          # the git hooks post every commit, not just merges
 
-[posts]                  # switch any automatic post off
+[posts]                  # switch any automatic post off (merge covers the git hooks too)
 session = true
 pr = true
 merge = true
@@ -253,7 +257,8 @@ Covering the store's vocabulary, ordering and limits; the MCP handshake, both
 tools and a real server over pipes with two agents posting; the CLI's
 round-trips and the git hooks installed, fired and uninstalled; automatic posts
 from agent events in a real repository, including simultaneous events from
-separate processes; installs into each agent and their exact undo; the timeline's
+separate processes, piped test runs, replies that only talk, and PR titles
+next to heredoc bodies; installs into each agent and their exact undo; the timeline's
 nodes, the share summary's prefill, and the clipboard; and a live pane driven
 against a scripted terminal, where a post from another process lands on the
 rail without a restart.

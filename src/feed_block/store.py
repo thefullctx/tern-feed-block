@@ -283,6 +283,11 @@ class Store:
             raise
         return new
 
+    def get(self, post_id: int) -> Post | None:
+        """One post by id, or None when it is gone."""
+        row = self._db.execute("SELECT * FROM posts WHERE id = ?", (post_id,)).fetchone()
+        return Post(**dict(row)) if row else None
+
     # -- agent sessions
 
     def session_state(self, session: str, root: str) -> dict | None:

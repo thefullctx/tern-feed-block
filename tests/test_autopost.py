@@ -158,6 +158,9 @@ def test_test_commands_are_recognized(command, found):
         ("- Added [the feed](https://x.test) to `cli.py`: works", "Added the feed to cli.py: works"),
         ("", ""),
         ("x" * 150, "x" * 99 + "…"),
+        ("Want me to also update the docs?", ""),
+        ("Shipped the fix. Want me to update the docs?", "Shipped the fix."),
+        ("Should I merge it?\n\nThe tests pass on main.", "The tests pass on main."),
     ],
 )
 def test_headline(message, title):
@@ -178,3 +181,64 @@ def test_simultaneous_events_leave_one_summary(repo, store, tmp_path):
     runs = [subprocess.Popen([sys.executable, "-c", script, str(store.path), str(repo)]) for _ in range(8)]
     assert all(run.wait(timeout=60) == 0 for run in runs)
     assert [p.kind for p in store.list()] == ["session"]
+
+
+def test_piped_failing_tests_still_count_as_failing(repo, store):
+    """`pytest | tail -5` exits 0: the runner's own count decides."""
+    send(store, repo, "start")
+    commit(repo, "b.txt", "x\n", "change")
+    send(
+        store,
+        repo,
+        "command",
+        command="uv run pytest -q 2>&1 | tail -3",
+        ok=True,
+        output="== 3 failed, 40 passed ==",
+    )
+    send(store, repo, "turn", message="Wired it up.")
+    [post] = store.list()
+    assert post.failed and "3 failed" in post.body
+    send(store, repo, "command", command="pytest | tail -1", ok=True, output="== 0 failed, 43 passed ==")
+    send(store, repo, "turn", message="Fixed.")
+    assert not store.list()[0].failed
+
+
+def test_the_session_ending_keeps_the_last_replys_title(repo, store):
+    send(store, repo, "start")
+    commit(repo, "b.txt", "x\n", "wip")
+    send(store, repo, "turn", message="Wired offline mode into the sync worker.")
+    send(store, repo, "end")
+    assert [p.title for p in store.list()] == ["Wired offline mode into the sync worker."]
+
+
+def test_a_reply_without_new_work_does_not_bump_the_summary(repo, store):
+    send(store, repo, "start")
+    commit(repo, "b.txt", "x\n", "change")
+    send(store, repo, "turn", message="Added the change.")
+    [first] = store.list()
+    send(store, repo, "command", command="fly deploy", ok=True, output="ok")  # something else posts
+    assert send(store, repo, "turn", message="It works because the queue retries.") == []
+    assert send(store, repo, "end") == []
+    summary = [p for p in store.list() if p.kind == "session"]
+    assert [(p.id, p.title) for p in summary] == [(first.id, "Added the change.")]  # same post, not bumped
+    commit(repo, "c.txt", "y\n", "more")
+    assert send(store, repo, "turn", message="Added more.")  # new work: a new summary on top
+    assert store.list()[0].title == "Added more."
+
+
+@pytest.mark.parametrize(
+    ("command", "title"),
+    [
+        (
+            """gh pr create --title "Switch models" --body "$(cat <<'EOF'\nHermes's picker\nEOF\n)\"""",
+            "Switch models",
+        ),
+        ("gh pr create -t 'Resume a session' --body x", "Resume a session"),
+        ("gh pr create --title=Fix", "Fix"),
+        ('gh pr create --title "Say \\"hi\\""', 'Say "hi"'),
+        ('gh pr create --title "$(git log -1 --format=%s)"', None),
+        ("gh pr create --fill", None),
+    ],
+)
+def test_pr_titles_survive_heredoc_bodies(command, title):
+    assert autopost.pr_title(command) == title

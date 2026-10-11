@@ -108,6 +108,23 @@ def plan(home: Path, command: list[str], *, uninstall: bool = False) -> tuple[li
     return changes, notes
 
 
+# Where each agent lives, to tell which are installed for this user.
+AGENT_HOMES = {
+    "claude-code": ".claude",
+    "omp": ".omp/agent",
+    "pi": ".pi/agent",
+    "codex": ".codex",
+    "hermes": ".hermes/config.yaml",
+}
+AUTOMATIC = ("claude-code", "omp", "pi")
+
+
+def status(home: Path) -> list[tuple[str, bool]]:
+    """Each agent installed for this user, and whether feed-block is set up in it."""
+    removable = {change.agent for change in plan(home, ["feed"], uninstall=True)[0]}
+    return [(agent, agent in removable) for agent, where in AGENT_HOMES.items() if (home / where).exists()]
+
+
 def _backup(path: Path) -> None:
     backup = path.with_name(path.name + BACKUP_SUFFIX)
     if path.exists() and not backup.exists():

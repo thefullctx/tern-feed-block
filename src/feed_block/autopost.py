@@ -107,8 +107,11 @@ def _command(
 
     test = matches(command, config.test_commands)
     if test and root is not None:
+        # The runner's own count wins over the exit code: `pytest | tail` exits 0 when tests fail.
         failed = FAILURES.search(output)
-        summary = f"{failed.group(1)} failed" if failed else ("passing" if ok else "failing")
+        if failed and int(failed.group(1)) > 0:
+            ok = False
+        summary = f"{failed.group(1)} failed" if failed and not ok else ("passing" if ok else "failing")
         store.update_session(session, str(root), tests_ok=int(ok), tests_summary=f"{test} · {summary}")
         return []
 
@@ -118,7 +121,7 @@ def _command(
         if url and store.has_link(url.group(0)):
             return []
         number = f"PR #{url.group(1)}" if url else "a PR"
-        title = _flag(words, "--title", "-t")
+        title = pr_title(command)
         made = store.post(
             kind="pr", title=f"opened {number}" + (f" {title}" if title else ""),
             link=url.group(0) if url else None, **common,
@@ -156,14 +159,24 @@ def _has(words: list[str], *run: str) -> bool:
     return any(tuple(words[i : i + len(run)]) == run for i in range(len(words)))
 
 
-def _flag(words: list[str], *names: str) -> str | None:
-    for index, word in enumerate(words):
-        for name in names:
-            if word == name and index + 1 < len(words):
-                return words[index + 1]
-            if word.startswith(name + "="):
-                return word.split("=", 1)[1]
-    return None
+# `--title "…"`, `-t '…'` or `--title=word`, read straight from the command line: a heredoc
+# body with an apostrophe in it ("Hermes's") makes the whole line unparseable as shell words.
+TITLE_FLAG = re.compile(
+    r"""(?:^|\s)(?:--title|-t)(?:=|\s+)(?:"((?:[^"\\\n]|\\.)*)"|'([^'\n]*)'|([^\s"'$][^\s]*))"""
+)
+
+
+def pr_title(command: str) -> str | None:
+    """The title a `gh pr create` command gives, when it is written out literally."""
+    found = TITLE_FLAG.search(command)
+    if not found:
+        return None
+    double, single, bare = found.groups()
+    if double is not None:
+        if re.search(r"\$[({]|`", double):
+            return None  # the shell computes it; the literal text would be noise
+        return re.sub(r"\\(.)", r"\1", double).strip() or None
+    return (single if single is not None else bare).strip() or None
 
 
 def _last_line(text: str) -> str:
@@ -189,7 +202,13 @@ def _summaries(event: dict, agent: str, session: str, store: Store, config: Conf
         if not commits and not changes:
             continue  # nothing changed here: nothing to say
         failed = state["tests_ok"] == 0
-        title = message or (commits[0] if commits else f"worked on {root.name}")
+        previous = store.get(state["post_id"]) if state["post_id"] else None
+        # An event without a reply (the session closing) keeps the title the last reply gave.
+        title = (
+            message
+            or (previous.title if previous else "")
+            or (commits[0] if commits else f"worked on {root.name}")
+        )
         details = []
         if failed:
             details.append(f"tests still failing · {state['tests_summary']}")
@@ -198,19 +217,28 @@ def _summaries(event: dict, agent: str, session: str, store: Store, config: Conf
         if not commits and changes:
             details.append("uncommitted")
         adds, dels = changes or (None, None)
-        made = store.replace_session_post(
-            session, str(root), agent=agent, kind="session", title=title, body=" · ".join(details),
-            repo=root.name, branch=gitutil.branch(root), additions=adds, deletions=dels,
-            status="failed" if failed else "ok",
+        fields = dict(
+            title=title, body=" · ".join(details), branch=gitutil.branch(root), additions=adds,
+            deletions=dels, status="failed" if failed else "ok",
         )  # fmt: skip
+        work = {name: value for name, value in fields.items() if name != "title"}
+        if previous and all(getattr(previous, name) == value for name, value in work.items()):
+            # No new work: a reply that only talks (answers a question, says goodbye)
+            # neither retitles the summary nor bumps it to the top.
+            continue
+        made = store.replace_session_post(
+            session, str(root), agent=agent, kind="session", repo=root.name, **fields
+        )
         written.append(f"session #{made.id}")
     return written
 
 
 def headline(message: str) -> str:
-    """The first sentence of an agent's reply, without markdown, as a one-line title.
+    """The first statement of an agent's reply, without markdown, as a one-line title.
 
-    Headings ("# Summary") say little, so the first sentence of prose wins over them.
+    Headings ("# Summary") say little, so prose wins over them; questions to the
+    user ("Want me to update the docs?") say nothing about the work, so they are
+    skipped. A reply with no statement gives "".
     """
     lines = message.splitlines()
     prose = [line for line in lines if not line.lstrip().startswith("#")]
@@ -218,8 +246,9 @@ def headline(message: str) -> str:
         text = re.sub(r"^\s*(?:[#>*+-]+|\d+[.)])\s*", "", line)  # headings, quotes, list markers
         text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)  # [label](link) → label
         text = re.sub(r"[*_`]+", "", text).strip()
-        if not text:
-            continue
-        sentence = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)[0].rstrip(":")
-        return sentence if len(sentence) <= TITLE_MAX else sentence[: TITLE_MAX - 1].rstrip() + "…"
+        for sentence in re.split(r"(?<=[.!?])\s+", text):
+            sentence = sentence.strip().rstrip(":")
+            if not sentence or sentence.endswith("?"):
+                continue
+            return sentence if len(sentence) <= TITLE_MAX else sentence[: TITLE_MAX - 1].rstrip() + "…"
     return ""
