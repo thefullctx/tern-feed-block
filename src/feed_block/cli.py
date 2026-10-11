@@ -86,7 +86,10 @@ def run_hook(name: str, store: Store) -> int:
     root = repo_root()
     if root is None:
         return 0  # a hook fired outside a repository: nothing to post
-    if name == "post-commit" and not config.load().git_commits:
+    settings = config.load()
+    if name == "post-merge" and not settings.posts_enabled("merge"):
+        return 0  # [posts] merge = false switches merges off, from agents and git alike
+    if name == "post-commit" and not settings.git_commits:
         return 0  # merges only, unless [git] commits = true: commits count into session summaries
     if name == "post-commit" and rewriting(root):
         return 0  # the original commit posted already; its rewrite would double-post
@@ -288,11 +291,16 @@ def doctor() -> int:
             for name in HOOKS
             if where and (where / name).is_file() and HOOK_MARKER in (where / name).read_text()
         ]
-        hooks = f"{', '.join(found) or 'not installed'} ({root.name})"
+        hooks = f"git hooks: {', '.join(found) or 'not installed'} ({root.name})"
     tern = shutil.which("tern")
     report("ok" if sys.version_info >= (3, 11) else "MISS", f"python {sys.version.split()[0]}")
     report("ok" if sdk[0] else "MISS", sdk[1])
     report("info", hooks)
+    for agent, ready in integrations.status(Path.home()):
+        how = "posts automatically" if agent in integrations.AUTOMATIC else "posts through MCP"
+        report(
+            "ok" if ready else "info", f"{agent} {how}" if ready else f"{agent} not set up (feed --install)"
+        )
     report(
         "ok" if tern else "info",
         f"tern at {tern}" if tern else "tern not on PATH (needed to view the surface)",

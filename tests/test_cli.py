@@ -365,6 +365,30 @@ def sha(repo):
     ).stdout.strip()
 
 
+def test_the_merge_switch_applies_to_git_hooks_too(repo, db, tmp_path, monkeypatch):
+    monkeypatch.chdir(repo)
+    (tmp_path / "config.toml").write_text("[posts]\nmerge = false\n")
+    assert cli.main(["hook", "run", "--name", "post-merge", "--", "0"]) == 0
+    with Store(db) as store:
+        assert store.count() == 0
+
+
+def test_doctor_reports_each_agent(db, tmp_path, monkeypatch, capsys):
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    (home / ".codex").mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    assert cli.main(["--doctor"]) == 0
+    out = capsys.readouterr().out
+    assert "info claude-code not set up (feed --install)" in out and "info codex not set up" in out
+    assert cli.main(["--install", "--yes"]) == 0
+    capsys.readouterr()
+    cli.main(["--doctor"])
+    out = capsys.readouterr().out
+    assert "ok   claude-code posts automatically" in out and "ok   codex posts through MCP" in out
+    assert "omp" not in out  # not installed for this user, so not mentioned
+
+
 def test_commits_post_only_when_switched_on(repo, db, capsys, monkeypatch):
     monkeypatch.chdir(repo)
     assert cli.main(["hook", "run", "--name", "post-commit", "--"]) == 0
