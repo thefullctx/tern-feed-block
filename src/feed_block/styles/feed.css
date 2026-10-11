@@ -1,10 +1,10 @@
 /* feed-block: a social feed in Tern's console idiom. One mono face on the pane's
-   cell grid; each post is two columns, an agent-tinted avatar with a kind badge
-   beside the text; hairlines instead of boxes; color is the only hierarchy. The
-   timeline's text column is inside the measure, and every post's avatar column
-   is the same width whether or not the post has an avatar. Agent hues come from
-   the rules this sheet is joined with (colors.rules), so every agent keeps one muted
-   color in light and dark. */
+   cell grid; each post is two columns, an avatar (Tern's builtin mark, else the
+   agent's tinted initials) with a kind badge chip beside the text; hairlines
+   instead of boxes; color is the only hierarchy. Avatar sizes and badges follow
+   the pane's line height and font size, so they grow with it, and cards are only
+   as wide as their work. Agent hues come from the rules this sheet is joined
+   with (colors.rules), so every agent keeps one muted color in light and dark. */
 [data-role='feed'] {
   --fb-mono: var(--tv-font, var(--mono, ui-monospace, monospace));
   --fb-cw: var(--sf-cw, 7.8px);
@@ -14,7 +14,6 @@
   --fb-faint: light-dark(#8f897d, #77716a);
   --fb-line: light-dark(#ded8cc, #3a3833);
   --fb-well: light-dark(#f4eee2, #23221f);
-  --fb-bg: light-dark(#f8f8f8, #0f1216);
   --fb-bad: var(--sf-bad, light-dark(#b4232c, #f87171));
   --fb-accent: light-dark(#6b4f9a, #c3a6e0);
   --fb-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -55,25 +54,35 @@
 @keyframes fb-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 /* ---------- a post: two columns, the avatar and the content; a hairline under it */
-[data-role^='post'] { display: flex; flex-direction: row; gap: 0; padding: 12px 0;
+[data-role^='post'] { display: flex; flex-direction: row; gap: 0; padding: 8px 0;
   box-shadow: inset 0 -1px 0 var(--fb-line); }
 /* the hover wash: the full width, avatar included */
 [data-role^='post']:hover { background: color-mix(in srgb, var(--fb-ink) 3%, transparent); }
 .fb-cont[data-role^='post'] { padding-top: 4px; }
 /* a thread continues right below: no hairline under the post above it */
 .fb-joined[data-role^='post'] { box-shadow: none; }
-/* the avatar column: fixed on every post; a continuation keeps it, empty */
-[data-role='gutter'] { flex: 0 0 40px; align-self: stretch; }
+/* the avatar column: fixed on every post; a continuation keeps it, empty.
+   Sizes follow the pane's line height and font size, so they grow with it */
+[data-role='gutter'] { flex: 0 0 auto; width: calc(2 * var(--fb-lh)); align-self: stretch; }
 [data-role='avatar'] { position: relative; display: flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; border-radius: 50%;
+  width: calc(1.6 * var(--fb-lh)); height: calc(1.6 * var(--fb-lh)); border-radius: 50%;
   background: color-mix(in srgb, var(--fb-agent) 22%, transparent); color: var(--fb-agent, var(--fb-ink)); }
-[data-role='letter'] { font: inherit; font-size: 14px; font-weight: 650; line-height: 1; }
-/* the kind's badge rides the avatar's lower right edge, punched out of the pane */
-[data-role='badge'] { position: absolute; right: -3px; bottom: -3px; width: 14px; height: 14px;
-  display: flex; align-items: center; justify-content: center; border-radius: 50%;
-  background: var(--fb-bg); box-shadow: inset 0 0 0 1px var(--fb-line); color: var(--fb-agent, var(--fb-faint));
-  font-size: 9px; font-weight: 600; line-height: 1; }
-.fb-failed [data-role='badge'] { color: var(--fb-bad); }
+[data-role='letter'] { font: inherit; font-size: calc(var(--sf-fs, 13px) + 1px); font-weight: 650; line-height: 1; }
+/* Tern's builtin mark, centered at 65% of the avatar, in the agent's hue */
+[data-role='mark'] { color: inherit; }
+[data-role='avatar'] [data-role='mark'] { width: calc(1.04 * var(--fb-lh)); height: calc(1.04 * var(--fb-lh)); }
+[data-role='avatar'] [data-role='mark'] .ico { width: 100%; height: 100%; }
+/* the kind's badge is its own little chip on the avatar's lower right edge */
+[data-role='badge'] { position: absolute; right: -3px; bottom: -3px; width: calc(0.7 * var(--fb-lh));
+  height: calc(0.7 * var(--fb-lh)); display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--fb-well); box-shadow: inset 0 0 0 1px var(--fb-line);
+  color: var(--fb-agent, var(--fb-faint)); font-size: calc(0.7 * var(--sf-fs, 13px)); font-weight: 600;
+  line-height: 1; }
+.fb-failed [data-role='badge'] { color: var(--fb-bad);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fb-bad) 45%, var(--fb-line)); }
+/* an agent with a bundled logo wears it, centered in the ring */
+[data-role='avatar'][data-logo] { background: var(--fb-well);
+  box-shadow: inset 0 0 0 1px var(--fb-line); }
 [data-role='content'] { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0; }
 [data-role='content'] > * { position: relative; }
 .fb-new [data-role='avatar'] { animation: fb-pop 420ms var(--fb-pop) both; }
@@ -95,17 +104,19 @@
 .fb-failed .sf.sf-text[data-role='title'] { color: color-mix(in srgb, var(--fb-bad) 70%, var(--fb-ink)); }
 .sf.sf-text[data-role='body'] { font: inherit; line-height: var(--fb-lh); color: var(--fb-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
-/* the card: where the work lives, raised a hair and closed by a hairline */
-.sf.sf-col[data-role='card'] { align-items: stretch; gap: 0; margin-top: 6px; padding: 6px 10px;
-  max-width: 560px; border-radius: 6px; background: var(--fb-well);
+/* the card: as wide as its work, up to the measure; raised a hair, closed by a hairline */
+.sf.sf-col[data-role='card'] { align-items: stretch; gap: 0; margin-top: 4px; padding: 3px 10px;
+  width: fit-content; min-width: 0; max-width: min(560px, 100%); align-self: flex-start;
+  border-radius: 6px; background: var(--fb-well);
   box-shadow: inset 0 0 0 1px var(--fb-line); }
+.sf.sf-col[data-role='card'] .sf-text { line-height: calc(var(--fb-lh) - 2px); }
 .sf.sf-row[data-role='card-top'] { align-items: baseline; gap: 0; }
-.sf.sf-row[data-role='card-diff'] { align-items: baseline; gap: 0; margin-top: 2px; }
+.sf.sf-row[data-role='card-diff'] { align-items: baseline; gap: 0; margin-top: 1px; }
 [data-role='card-repo'] { color: var(--fb-agent, var(--fb-ink)); }
 [data-role='card-branch'] { color: var(--fb-muted); }
 [data-role='card-repo'] + [data-role='card-branch']::before { content: '·'; margin: 0 var(--fb-cw);
   color: var(--fb-muted); }
-[data-role='card-ref'] { margin-left: auto; color: var(--fb-ink); }
+[data-role='card-ref'] { margin-left: calc(2 * var(--fb-cw)); color: var(--fb-ink); }
 [data-role='diff-bar-add'] { color: var(--fb-ok, light-dark(#3f7d4a, #8fc79a)); }
 [data-role='diff-bar-del'] { color: var(--fb-bad); }
 [data-role='diff-add'] { margin-left: calc(2 * var(--fb-cw)); color: var(--fb-ok, light-dark(#3f7d4a, #8fc79a)); }

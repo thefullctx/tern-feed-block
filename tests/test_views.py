@@ -109,23 +109,6 @@ def test_a_post_joined_above_keeps_a_divider_only_when_its_thread_ends():
     assert "fb-joined" not in plain.props["class"].split()
 
 
-def test_the_avatar_is_the_initial_beside_the_kind_badge():
-    node = views.post_node(post(kind="merge"), HANDLERS, now=time.time(), newest=False)
-    column = gutter(node)
-    avatar = column.children[0]
-    assert column.props["role"] == "gutter" and avatar.props["role"] == "avatar"
-    letter, badge = avatar.children
-    assert (letter.props["role"], letter.props["text"]) == ("letter", "H")
-    assert (badge.props["role"], badge.props["text"]) == ("badge", "⋈")  # a join, not a check mark
-    assert content(node) is node.children[1]
-
-
-def test_a_failed_post_wears_the_failed_glyph():
-    node = views.post_node(post(kind="commit", status="failed"), HANDLERS, now=time.time(), newest=False)
-    badge = find(node, "avatar").children[1]
-    assert badge.props["text"] == "✗"
-
-
 def test_display_names_are_the_known_ones_or_the_name_title_cased():
     assert [views.colors.display_name(a) for a in ("claude-code", "codex", "omp", "pi", "hermes")] == [
         "Claude Code",
@@ -137,16 +120,82 @@ def test_display_names_are_the_known_ones_or_the_name_title_cased():
     assert views.colors.display_name("my_agent-x") == "My Agent X"
 
 
+def test_tern_marks_cover_the_known_agents_and_nobody_else():
+    assert [views.colors.mark(a) for a in ("claude-code", "codex", "omp", "pi")] == [
+        "app-claude",
+        "app-codex",
+        "app-omp",
+        "pi-mark",
+    ]
+    assert views.colors.mark("hermes") is None
+    assert views.colors.mark("my-agent") is None
+
+
+def test_fallback_initials_are_up_to_two_letters():
+    assert views.colors.initials("claude-code") == "CC"
+    assert views.colors.initials("hermes") == "H"
+    assert views.colors.initials("pi") == "P"
+    assert views.colors.initials("my_agent-x") == "MA"
+
+
+def test_the_avatar_is_a_tern_mark_or_initials_with_the_badge():
+    # hermes has no builtin mark: the initials avatar
+    node = views.post_node(post(kind="merge"), HANDLERS, now=time.time(), newest=False)
+    avatar = gutter(node).children[0]
+    assert gutter(node).props["role"] == "gutter" and avatar.props["role"] == "avatar"
+    assert avatar.props["title"] == "Hermes" and avatar.props["aria"] == "Hermes"
+    letter, badge = avatar.children
+    assert (letter.props["role"], letter.props["text"]) == ("letter", "H")
+    assert (badge.props["role"], badge.props["text"]) == ("badge", "⋈")  # a join, not a check mark
+    assert content(node) is node.children[1]
+
+    # claude-code carries tern's mark; the badge rides beside it either way
+    marked = views.post_node(post(agent="claude-code"), HANDLERS, now=time.time(), newest=False)
+    face, badge = gutter(marked).children[0].children
+    assert face.props["role"] == "mark" and face.props.get("name") == "app-claude"
+    assert face.children == [] and badge.props["text"] == "⇡"
+
+    # a multi-word unknown agent gets both initials
+    double = views.post_node(post(agent="unknown-bird"), HANDLERS, now=time.time(), newest=False)
+    face = gutter(double).children[0].children[0]
+    assert (face.props["role"], face.props["text"]) == ("letter", "UB")
+
+
+def test_the_failed_badge_chip_wears_the_failed_glyph():
+    node = views.post_node(post(kind="commit", status="failed"), HANDLERS, now=time.time(), newest=False)
+    badge = find(node, "avatar").children[-1]
+    assert badge.props["role"] == "badge" and badge.props["text"] == "✗"
+    assert "fb-failed" in node.props["class"].split()  # the ring and title take the failure's hue in css
+    healthy = views.post_node(post(kind="commit", status="ok"), HANDLERS, now=time.time(), newest=False)
+    chip = find(healthy, "badge")
+    assert chip.props["text"] == "●" and "fb-failed" not in healthy.props["class"].split()
+
+
 def test_the_card_shows_repo_branch_ref_and_diff_without_the_url():
     node = views.post_node(post(branch="main"), HANDLERS, now=time.time(), newest=False)
     card = find(node, "card")
     assert [c.props.get("role") for c in card.children] == ["card-top", "card-diff"]
+    assert card.kind == "col"
     top = find(card, "card-top")
     assert [c.props.get("role") for c in top.children] == ["card-repo", "card-branch", "card-ref"]
     assert find(card, "card-ref").props["text"] == "#42"
     diff = find(card, "card-diff")
-    assert [c.props.get("text") for c in diff.children] == ["▰" * 8, "▱" * 2, "+120", "−34"]
+    assert [c.props.get("text") for c in diff.children] == [
+        views.DIFF_BLOCK * 8,
+        views.DIFF_BLOCK * 2,
+        "+120",
+        "−34",
+    ]
     assert "github.com" not in str(card.to_json())
+
+
+def test_the_card_body_is_head_title_body_card_flow():
+    node = views.post_node(post(branch="main"), HANDLERS, now=time.time(), newest=False)
+    content = find(node, "content")
+    assert [c.props.get("role") for c in content.children] == ["head", "title", "body", "card"]
+    # Nothing wraps the card any more: it hangs off the content flow itself,
+    # which is what lets the stylesheet hug it to its content.
+    assert [c.kind for c in content.children] == ["row", "text", "text", "col"]
 
 
 def test_diff_bar_splits_ten_cells_between_the_sides():

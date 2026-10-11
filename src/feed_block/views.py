@@ -1,9 +1,10 @@
 """The timeline as native nodes: avatars, day dividers, the filter strip.
 
-A social feed in Tern's console idiom, one post per line pair: an agent-tinted
-avatar with its kind badge beside a head line (name `@handle` · 2m · kind, the
-actions pushed right, on hover or focus only), the title, a muted body and the
-card (repo · branch, the short reference, the diff bar). A hairline closes
+A social feed in Tern's console idiom, one post per line pair: an avatar
+(Tern's builtin mark, else the agent's tinted initials) with its kind badge
+beside a head line (name `@handle` · 2m · kind, the actions pushed right, on
+hover or focus only), the title, a muted body and the card (repo · branch,
+the short reference, the diff bar), sized to its content. A hairline closes
 every post but one: a session posting again right below itself continues the
 thread instead, under the same avatar column, until its last post.
 """
@@ -91,6 +92,10 @@ def diff_bar(adds: int | None, dels: int | None) -> tuple[int, int]:
     return (green, 10 - green)
 
 
+# One block per diff-bar cell; both runs use the same, so it reads as a bar.
+DIFF_BLOCK = "■"
+
+
 def _card(post: Post) -> ui.Node | None:
     """The work card: repo · branch with the short reference at the right, then the diff bar."""
     top: list[ui.Node] = []
@@ -110,8 +115,8 @@ def _card(post: Post) -> ui.Node | None:
     if green or red:
         rows.append(
             ui.row(
-                ui.text("▰" * green, role="diff-bar-add", key="ga"),
-                ui.text("▱" * red, role="diff-bar-del", key="gr"),
+                ui.text(DIFF_BLOCK * green, role="diff-bar-add", key="ga"),
+                ui.text(DIFF_BLOCK * red, role="diff-bar-del", key="gr"),
                 ui.text(f"+{post.additions or 0}", role="diff-add", key="a"),
                 ui.text(f"−{post.deletions or 0}", role="diff-del", key="d"),
                 role="card-diff",
@@ -173,14 +178,23 @@ def post_node(
         children.append(card)
     gutter: list[ui.Node] = []
     if not continued:
-        # The avatar: the agent's initial in its own hue, and the kind's badge
-        # where the rail's glyph used to be, on the circle's lower right edge.
+        # The avatar: Tern's builtin mark when it carries one, else the agent's
+        # initials in its own hue; the kind's badge rides the lower right edge.
+        name = colors.display_name(post.agent)
+        icon = colors.mark(post.agent)
+        face: list[ui.Node] = (
+            [ui.text(colors.initials(post.agent), role="letter", key="l")]
+            if icon is None
+            else [ui.icon(icon, role="mark", key="m")]
+        )
         gutter.append(
             ui.html.div(
-                ui.text(colors.display_name(post.agent)[:1].upper(), role="letter", key="l"),
+                *face,
                 ui.html.span(colors.glyph(post.kind, post.failed), role="badge", key="bg"),
                 role="avatar",
                 key="av",
+                title=name,
+                aria=name,
             )
         )
     return ui.html.div(
@@ -242,7 +256,7 @@ def today_counts(posts: list[Post], now: float) -> tuple[dict[str, int], int]:
 
 
 def agents_of(posts: list[Post]) -> list[str]:
-    """The agents on the rail, most recent first, for the filter strip."""
+    """The agents in the feed, most recent first, for the filter strip."""
     seen: dict[str, int] = {}
     for post in posts:
         seen.setdefault(post.agent, post.id)
