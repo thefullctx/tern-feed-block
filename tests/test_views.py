@@ -121,13 +121,13 @@ def test_display_names_are_the_known_ones_or_the_name_title_cased():
 
 
 def test_tern_marks_cover_the_known_agents_and_nobody_else():
-    assert [views.colors.mark(a) for a in ("claude-code", "codex", "omp", "pi")] == [
+    assert [views.colors.mark(a) for a in ("claude-code", "codex", "omp", "pi", "hermes")] == [
         "app-claude",
         "app-codex",
         "app-omp",
         "pi-mark",
+        "tile-hermes",
     ]
-    assert views.colors.mark("hermes") is None
     assert views.colors.mark("my-agent") is None
 
 
@@ -139,13 +139,13 @@ def test_fallback_initials_are_up_to_two_letters():
 
 
 def test_the_avatar_is_a_tern_mark_or_initials_with_the_badge():
-    # hermes has no builtin mark: the initials avatar
-    node = views.post_node(post(kind="merge"), HANDLERS, now=time.time(), newest=False)
+    # an agent Tern has no mark for: the initials avatar
+    node = views.post_node(post(kind="merge", agent="my-agent"), HANDLERS, now=time.time(), newest=False)
     avatar = gutter(node).children[0]
     assert gutter(node).props["role"] == "gutter" and avatar.props["role"] == "avatar"
-    assert avatar.props["title"] == "Hermes" and avatar.props["aria"] == "Hermes"
+    assert avatar.props["title"] == "My Agent" and avatar.props["aria"] == "My Agent"
     letter, badge = avatar.children
-    assert (letter.props["role"], letter.props["text"]) == ("letter", "H")
+    assert (letter.props["role"], letter.props["text"]) == ("letter", "MA")
     assert (badge.props["role"], badge.props["text"]) == ("badge", "⋈")  # a join, not a check mark
     assert content(node) is node.children[1]
 
@@ -410,3 +410,10 @@ def test_agent_ordering_is_newest_first():
     page = views.feed_view(posts, None, set(), HANDLERS)
     tree = nodes(page)
     assert [text.split()[0] for text in chip_texts(tree)] == ["@codex", "@hermes", "@omp"]
+
+
+def test_hermes_wears_terns_hermes_tile():
+    node = views.post_node(post(agent="hermes"), HANDLERS, now=time.time(), newest=False)
+    mark, badge = gutter(node).children[0].children
+    assert (mark.props["role"], badge.props["role"]) == ("mark", "badge")
+    assert mark.to_json()["k"] == "icon" and "tile-hermes" in str(mark.to_json())

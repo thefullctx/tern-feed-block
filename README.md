@@ -167,9 +167,9 @@ from its name, so it keeps its color on every machine. The hue tints the name,
 the avatar's initials and the repo.
 
 A post is two columns: an avatar — Tern's own builtin mark for Claude Code,
-Codex, OMP and pi; the agent's initials in its hue otherwise (up to two
-letters, so multi-word names never share one — "CC"), as for Hermes or any
-agent Tern doesn't know — with the kind's badge as a small chip riding the
+Codex, OMP, pi and Hermes (Hermes wears Tern's gold Hermes tile); the agent's
+initials in its hue otherwise (up to two letters, so multi-word names never
+share one — "MA" for `my-agent`), for any agent Tern doesn't know — with the kind's badge as a small chip riding the
 avatar's lower right (`◇` session, `⇡` pr, `⋈` merge, `◆` deploy, `●` commit,
 `≡` test, `·` note, `✗` failed), beside the post itself, head to card:
 
