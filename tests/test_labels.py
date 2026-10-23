@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import time
 
-from feed_block.labels import handle, session_numbers
-from feed_block.store import Post
+from feed_block.labels import handle, numbers_for, session_numbers
+from feed_block.store import Post, Store
 
 NOW = int(time.time())
 
@@ -35,3 +35,25 @@ def test_numbers_restart_each_day():
     ]
     numbers = session_numbers(posts)
     assert [handle(p, numbers) for p in posts] == ["@omp", "@omp²", "@omp¹"]
+
+
+def test_a_replaced_summary_keeps_its_sessions_number(tmp_path):
+    """Session a began first; its summary, replaced later, still reads ¹."""
+    with Store(tmp_path / "feed.db") as store:
+        store.open_session("a", "/r", "omp", None)
+        store.post(agent="omp", kind="note", title="b's first", session="b")
+        store.replace_session_post("a", "/r", agent="omp", kind="session", title="a's summary")
+        store._db.execute("UPDATE sessions SET started_at = started_at - 600")
+        store._db.commit()
+        posts = store.list()
+        numbers = numbers_for(posts, store)
+        assert [handle(p, numbers) for p in posts] == ["@omp¹", "@omp²"]
+
+
+def test_numbers_count_sessions_beyond_the_page(tmp_path):
+    """Only b's post is shown, but a posted earlier that day: b stays ²."""
+    with Store(tmp_path / "feed.db") as store:
+        store.post(agent="omp", kind="note", title="a", session="a")
+        store.post(agent="omp", kind="note", title="b", session="b")
+        posts = store.list(limit=1)
+        assert [handle(p, numbers_for(posts, store)) for p in posts] == ["@omp²"]

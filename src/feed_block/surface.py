@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 from tern_sdk import Key, ui
 
-from . import design, views
+from . import design, labels, views
 from .store import Post, Store
 from .views import Handlers
 
@@ -145,8 +145,9 @@ class Feed:
         today = self.store.since(int(midnight))
         live = time.monotonic() < self.live_until
         page = views.feed_view(
-            posts, agents, self.selected, self.handlers, live=live, counts=counts, today=today
-        )
+            posts, agents, self.selected, self.handlers, live=live, counts=counts, today=today,
+            numbers=labels.numbers_for(posts, self.store),
+        )  # fmt: skip
         if self.toast:
             text, sub = self.toast
             page["layer"] = ui.col(ui.toast(text, sub=sub, ttl=TOAST, key="toast"), key="toasts")

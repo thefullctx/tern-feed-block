@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 
@@ -242,3 +243,78 @@ def test_a_reply_without_new_work_does_not_bump_the_summary(repo, store):
 )
 def test_pr_titles_survive_heredoc_bodies(command, title):
     assert autopost.pr_title(command) == title
+
+
+def test_pulled_commits_are_not_the_sessions_work(repo, store, tmp_path):
+    """A fast-forward pull brings others' commits into `base..HEAD`; only the session's own count."""
+    clone = tmp_path / "clone"
+    git("clone", "-q", str(repo), str(clone), cwd=tmp_path)
+    git("config", "user.email", "agent@example.com", cwd=clone)
+    git("config", "user.name", "agent", cwd=clone)
+    send(store, clone, "start")
+    for n in range(3):
+        commit(repo, f"up{n}.txt", "x\n" * 50, f"upstream {n}")
+    git("pull", "-q", "--ff-only", cwd=clone)
+    commit(clone, "mine.txt", "one\ntwo\n", "my change")
+    send(store, clone, "turn", message="Made my change.")
+    [post] = store.list()
+    assert post.body == "1 commit"
+    assert (post.additions, post.deletions) == (2, 0)
+
+
+def test_merging_main_in_counts_only_the_sessions_commits(repo, store):
+    git("checkout", "-qb", "feature", cwd=repo)
+    send(store, repo, "start")
+    commit(repo, "mine.txt", "one\n", "my change")
+    git("checkout", "-q", "main", cwd=repo)
+    # Made on main before the session, by its date; the reflog's dates are not in order then.
+    (repo / "main.txt").write_text("m\n" * 40)
+    git("add", "main.txt", cwd=repo)
+    subprocess.run(
+        ["git", "commit", "-qm", "main work"],
+        cwd=repo, check=True, env={**os.environ, "GIT_COMMITTER_DATE": "2000-01-01T00:00:00"},
+    )  # fmt: skip
+    git("checkout", "-q", "feature", cwd=repo)
+    git("merge", "-q", "--no-edit", "main", cwd=repo)
+    send(store, repo, "turn", message="Synced with main.")
+    [post] = store.list()
+    assert post.body == "1 commit" and (post.additions, post.deletions) == (1, 0)
+
+
+def test_new_untracked_files_are_work(repo, store):
+    send(store, repo, "start")
+    (repo / "new.py").write_text("a\nb\nc")  # no trailing newline: still three lines
+    (repo / "blob.bin").write_bytes(b"\0\1\2\n")  # binary: not counted
+    send(store, repo, "end")
+    [post] = store.list()
+    assert post.body == "uncommitted" and (post.additions, post.deletions) == (3, 0)
+
+
+@pytest.mark.parametrize(
+    ("output", "ok", "summary"),
+    [
+        ("Test Suites: 1 failed, 2 passed\nTests:       4 failed, 30 passed", False, "jest · 4 failed"),
+        ("error: 3 failed to compile\nTests: 12 passed", True, "jest · passing"),
+        ("collected 0 items / 1 error\n== 0 failed ==", False, "jest · failing"),
+        ("== 2 failed ==\n...\n== 0 failed, 9 passed ==", True, "jest · passing"),
+    ],
+)
+def test_the_runners_final_count_decides(repo, store, output, ok, summary):
+    send(store, repo, "start")
+    send(store, repo, "command", command="npx jest", ok=ok, output=output)
+    state = store.session_state("s1", str(repo))
+    assert state["tests_summary"] == summary
+
+
+@pytest.mark.parametrize(
+    ("command", "found"),
+    [
+        ('git commit -m "fix; fly deploy --remote-only"', None),
+        ("echo 'a && fly deploy now'", None),
+        ('git commit -m "say \\"hi\\"; fly deploy now"', None),
+        ("cd api && fly deploy", "fly deploy"),
+        ("cat <<EOF > notes\nHermes's notes\nEOF\nfly deploy", "fly deploy"),  # quotes never close
+    ],
+)
+def test_separators_inside_quotes_do_not_split(command, found):
+    assert autopost.matches(command, Config().deploy_commands) == found

@@ -363,6 +363,20 @@ class Store:
             int(row["failed"] or 0) for row in rows
         )
 
+    def sessions_since(self, timestamp: int) -> list[tuple[str, str, int, int | None]]:
+        """(agent, session, posted at, session began at) for every session post from `timestamp` on.
+
+        Session numbers come from these: when a session began does not move as
+        its summary is replaced, and posts outside the shown page still count.
+        """
+        rows = self._db.execute(
+            "SELECT p.agent, p.session, p.created_at,"
+            " (SELECT MIN(s.started_at) FROM sessions s WHERE s.session = p.session) AS began"
+            " FROM posts p WHERE p.session IS NOT NULL AND p.created_at >= ? ORDER BY p.created_at, p.id",
+            (timestamp,),
+        ).fetchall()
+        return [(str(r["agent"]), str(r["session"]), int(r["created_at"]), r["began"]) for r in rows]
+
     def latest_id(self) -> int:
         """The id of the newest post, or 0 when the feed is empty."""
         row = self._db.execute("SELECT MAX(id) AS m FROM posts").fetchone()

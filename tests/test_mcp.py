@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import subprocess
@@ -247,3 +248,10 @@ def test_serve_over_real_pipes_with_two_agents(tmp_path):
 def test_an_empty_batch_is_one_invalid_request(store):
     replies = mcp_server.handle_frames([], store)
     assert len(replies) == 1 and replies[0]["error"]["code"] == mcp_server.INVALID_REQUEST
+
+
+def test_a_null_line_is_an_invalid_request_not_null(store):
+    out = io.StringIO()
+    mcp_server.serve(io.StringIO("null\n"), out, store)
+    [reply] = [json.loads(line) for line in out.getvalue().splitlines()]
+    assert reply["error"]["code"] == mcp_server.INVALID_REQUEST

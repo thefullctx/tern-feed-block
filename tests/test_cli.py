@@ -414,3 +414,63 @@ def test_bare_feed_outside_tern_prints_plain_text(db, capsys):
     # TSP is not available in tests (no tty handshake): the plain feed prints.
     assert cli.main([]) == 0
     assert "hello rail" in capsys.readouterr().out
+
+
+def test_a_pull_is_not_a_merge(repo, db, tmp_path, monkeypatch):
+    """git runs post-merge on every pull, fast-forwards included: none of them post."""
+    clone = tmp_path / "clone"
+    git("clone", "-q", str(repo), str(clone), cwd=tmp_path)
+    (repo / "b.txt").write_text("two\n")
+    git("add", "b.txt", cwd=repo)
+    git("commit", "-qm", "upstream work", cwd=repo)
+    git("pull", "-q", "--ff-only", cwd=clone)
+    monkeypatch.chdir(clone)
+    assert cli.main(["hook", "run", "--name", "post-merge", "--", "0"]) == 0
+    with Store(db) as store:
+        assert store.count() == 0
+
+
+def test_a_fast_forward_merge_made_here_posts(repo, db, monkeypatch):
+    monkeypatch.chdir(repo)
+    git("checkout", "-qb", "side", cwd=repo)
+    (repo / "b.txt").write_text("two\n")
+    git("add", "b.txt", cwd=repo)
+    git("commit", "-qm", "side work", cwd=repo)
+    git("checkout", "-q", "-", cwd=repo)
+    git("merge", "-q", "--ff-only", "side", cwd=repo)
+    assert cli.main(["hook", "run", "--name", "post-merge", "--", "0"]) == 0
+    with Store(db) as store:
+        assert [(p.kind, p.title) for p in store.list()] == [("merge", "merged side work")]
+
+
+def test_a_squash_merge_posts_nothing_yet(repo, db, monkeypatch):
+    monkeypatch.chdir(repo)
+    assert cli.main(["hook", "run", "--name", "post-merge", "--", "1"]) == 0
+    with Store(db) as store:
+        assert store.count() == 0
+
+
+def test_uninstall_leaves_a_hook_replaced_since(repo, db, monkeypatch, capsys):
+    hooks = repo / ".git" / "hooks"
+    (hooks / "post-merge").write_text("#!/bin/sh\necho mine\n")
+    assert cli.main(["hook", "install", "--repo", str(repo)]) == 0
+    (hooks / "post-merge").write_text("#!/bin/sh\necho newer\n")  # the user's own, after install
+    assert cli.main(["hook", "install", "--repo", str(repo), "--uninstall"]) == 0
+    out = capsys.readouterr().out
+    assert "post-merge: changed since install" in out and "Uninstalled from" in out
+    assert (hooks / "post-merge").read_text() == "#!/bin/sh\necho newer\n"
+    assert (hooks / "post-merge.before-feed-block").read_text() == "#!/bin/sh\necho mine\n"
+
+
+def test_hook_install_says_merges_post_by_default(repo, db, capsys):
+    assert cli.main(["hook", "install", "--repo", str(repo)]) == 0
+    assert "Merges made here now post (commits too, with [git] commits = true)." in capsys.readouterr().out
+
+
+def test_post_carries_the_branch_and_the_agents_session(db, monkeypatch, capsys):
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-7")
+    assert cli.main(["post", "--kind", "note", "--title", "hi", "--branch", "offline"]) == 0
+    with Store(db) as store:
+        [post] = store.list()
+        assert (post.agent, post.branch, post.session) == ("claude-code", "offline", "sess-7")

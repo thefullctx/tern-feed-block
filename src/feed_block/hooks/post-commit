@@ -1,6 +1,6 @@
 #!/bin/sh
-# feed-block managed hook: posts the commit you just made to the local feed.
-# Installed by `feed --install`; remove it with `feed hook install --uninstall`.
+# feed-block managed hook: posts the commit you just made, with [git] commits = true.
+# Installed by `feed hook install`; remove it with `feed hook install --uninstall`.
 # FEED_BLOCK=0 skips. The feed command is the one that installed this hook;
 # FEED_BLOCK_BIN overrides it when the feed lives elsewhere.
 [ "${FEED_BLOCK:-1}" = "0" ] && exit 0

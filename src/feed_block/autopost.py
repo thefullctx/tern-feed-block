@@ -34,8 +34,10 @@ TITLE_MAX = 100
 PR_URL = re.compile(r"https://\S+?/pull/(\d+)")
 # `gh pr merge` says: "✓ Squashed and merged pull request owner/repo#42 (Add offline mode)".
 MERGED = re.compile(r"[Mm]erged pull request \S*?#(\d+) \((.+)\)")
-# The failure count a test runner prints, in the shapes pytest, jest, cargo and go use.
-FAILURES = re.compile(r"\b(\d+) (?:failed|failing|failures?)\b")
+# The failure count a test runner prints, in the shapes pytest, jest, cargo and go use; the
+# last one wins, since runners end on their total (jest prints suites, then tests). "3 failed
+# to compile" is a build log talking, not a count.
+FAILURES = re.compile(r"\b(\d+) (?:failed|failing|failures?)\b(?! to\b)")
 # Wrappers that run the real command: `uv run pytest`, `npx vitest`, `time cargo test`.
 WRAPPERS = ("uv run", "poetry run", "pipenv run", "pdm run", "hatch run", "npx", "pnpm exec", "bunx", "time")
 
@@ -63,10 +65,46 @@ def handle(event: dict, store: Store, config: Config) -> list[str]:
 # -- commands
 
 
+# What separates two simple commands in a shell line.
+SEPARATORS = ("&&", "||", ";", "|", "\n")
+
+
+def split_commands(command: str) -> list[str]:
+    """A shell line split at `&&`, `||`, `;`, `|` and newlines outside quotes.
+
+    `git commit -m "fix; fly deploy"` is one command. A line whose quotes never
+    close (an apostrophe in a heredoc body) is split everywhere instead, as text.
+    """
+    parts, current, quote, i = [], [], "", 0
+    while i < len(command):
+        char = command[i]
+        if char == "\\" and quote != "'" and i + 1 < len(command):
+            current.append(command[i : i + 2])
+            i += 2
+            continue
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "'\"":
+            quote = char
+        else:
+            separator = next((s for s in SEPARATORS if command.startswith(s, i)), None)
+            if separator:
+                parts.append("".join(current))
+                current = []
+                i += len(separator)
+                continue
+        current.append(char)
+        i += 1
+    if quote:
+        return re.split(r"&&|\|\||;|\||\n", command)
+    return [*parts, "".join(current)]
+
+
 def segments(command: str) -> list[str]:
     """The simple commands in a shell line, each without leading `VAR=x` or wrappers."""
     found = []
-    for part in re.split(r"&&|\|\||;|\||\n", command):
+    for part in split_commands(command):
         words = part.strip().split()
         while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
             words = words[1:]
@@ -108,10 +146,11 @@ def _command(
     test = matches(command, config.test_commands)
     if test and root is not None:
         # The runner's own count wins over the exit code: `pytest | tail` exits 0 when tests fail.
-        failed = FAILURES.search(output)
-        if failed and int(failed.group(1)) > 0:
+        counts = FAILURES.findall(output)
+        failed = int(counts[-1]) if counts else 0
+        if failed:
             ok = False
-        summary = f"{failed.group(1)} failed" if failed and not ok else ("passing" if ok else "failing")
+        summary = f"{failed} failed" if failed else ("passing" if ok else "failing")
         store.update_session(session, str(root), tests_ok=int(ok), tests_summary=f"{test} · {summary}")
         return []
 
@@ -196,9 +235,9 @@ def _summaries(event: dict, agent: str, session: str, store: Store, config: Conf
         root = Path(state["root"])
         if not root.is_dir():
             continue
-        base = state["base"]
-        commits = gitutil.commits_since(root, base)
-        changes = gitutil.changes_since(root, base)
+        made = gitutil.session_commits(root, state["base"], state["started_at"])
+        commits = [subject for _, subject in made]
+        changes = gitutil.session_changes(root, [sha for sha, _ in made])
         if not commits and not changes:
             continue  # nothing changed here: nothing to say
         failed = state["tests_ok"] == 0
