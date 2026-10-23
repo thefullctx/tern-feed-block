@@ -417,3 +417,57 @@ def test_hermes_wears_terns_hermes_tile():
     mark, badge = gutter(node).children[0].children
     assert (mark.props["role"], badge.props["role"]) == ("mark", "badge")
     assert mark.to_json()["k"] == "icon" and "tile-hermes" in str(mark.to_json())
+
+
+# ---------------------------------------------------------------------------
+# the keyboard's cursor and the filters
+
+
+def classes(node) -> str:
+    return str(node.props.get("class", ""))
+
+
+def test_the_cursor_marks_its_post():
+    posts = [post(id=9, title="newer"), post(id=7)]
+    tree = nodes(views.feed_view(posts, ["hermes"], set(), HANDLERS, cursor=7))
+    assert "fb-cursor" in classes(tree["main.feed.p7"])
+    assert "fb-cursor" not in classes(tree["main.feed.p9"])
+
+
+def test_kind_and_failed_filters_narrow_the_view():
+    posts = [post(id=9, kind="deploy", status="failed"), post(id=8, kind="deploy"), post(id=7)]
+    tree = nodes(views.feed_view(posts, ["hermes"], set(), HANDLERS, kind="deploy"))
+    assert "main.feed.p9" in tree and "main.feed.p8" in tree and "main.feed.p7" not in tree
+    tree = nodes(views.feed_view(posts, ["hermes"], set(), HANDLERS, kind="deploy", failed_only=True))
+    assert [k for k in tree if k.startswith("main.feed.p") and k.count(".") == 2] == ["main.feed.p9"]
+    tree = nodes(views.feed_view(posts, ["hermes"], set(), HANDLERS, kind="note"))
+    assert tree["main.feed.filtered"].props["text"] == views.FILTERED
+
+
+def test_filters_show_as_chips_that_clear_them():
+    calls = []
+    handlers = Handlers(
+        open=noop, copy=noop, share=noop, toggle=noop,
+        kind=lambda k: calls.append(("kind", k)), failed=lambda: calls.append("failed"),
+    )  # fmt: skip
+    shown = post(kind="pr", status="failed")
+    page = views.feed_view([shown], ["hermes"], set(), handlers, kind="pr", failed_only=True)
+    tree = nodes(page)
+    chip = tree["main.feed.strip.chip-kind"]
+    assert chip.props["text"] == "⇡ pr" and chip.props["role"] == "chip-on"
+    flag = tree["main.feed.strip.failed"]
+    assert flag.props["role"] == "failed-on" and flag.props["text"].startswith("✗ ")
+    chip.handlers["action:click"](None)
+    flag.handlers["action:click"](None)
+    tree["main.feed.p7.c.head.k"].handlers["action:click"](None)  # the kind word filters too
+    assert calls == [("kind", "pr"), "failed", ("kind", "pr")]
+
+
+def test_the_key_legend_numbers_the_handles():
+    page = views.feed_view([post()], ["hermes", "codex"], set(), HANDLERS, keys=True)
+    tree = nodes(page)
+    assert "main.feed.keys" in tree
+    assert tree["main.feed.strip.chip-hermes"].props["text"].startswith("1 @hermes")
+    assert tree["main.feed.strip.chip-codex"].props["text"] == "2 @codex"
+    plain = nodes(views.feed_view([post()], ["hermes"], set(), HANDLERS))
+    assert "main.feed.keys" not in plain

@@ -153,13 +153,27 @@ def _counts(value: object, field: str) -> int | None:
     return number
 
 
-def _where(agent: str | None, agents: Iterable[str] | None) -> tuple[str, list[str]]:
-    """The WHERE clause for one agent, or any of several; empty when neither is given."""
+def _where(
+    agent: str | None,
+    agents: Iterable[str] | None,
+    kind: str | None = None,
+    failed: bool = False,
+) -> tuple[str, list[str]]:
+    """The WHERE clause for one agent or any of several, one kind, failed posts only;
+    empty when nothing narrows the feed."""
     names = [str(agent).strip()] if agent else []
     names += [str(name).strip() for name in agents or ()]
-    if not names:
-        return "", []
-    return f" WHERE agent IN ({', '.join('?' * len(names))})", names
+    clauses: list[str] = []
+    params: list[str] = []
+    if names:
+        clauses.append(f"agent IN ({', '.join('?' * len(names))})")
+        params += names
+    if kind:
+        clauses.append("kind = ?")
+        params.append(kind)
+    if failed:
+        clauses.append("status = 'failed'")
+    return (f" WHERE {' AND '.join(clauses)}", params) if clauses else ("", [])
 
 
 class Store:
@@ -332,18 +346,26 @@ class Store:
         limit: int = DEFAULT_LIMIT,
         agent: str | None = None,
         agents: Iterable[str] | None = None,
+        kind: str | None = None,
+        failed: bool = False,
     ) -> list[Post]:
-        """Newest first, optionally one agent's posts (or any of several agents') only."""
+        """Newest first, optionally one agent's posts (or any of several agents'), one
+        kind's, or the failed ones only."""
         try:
             count = int(limit)
         except (TypeError, ValueError):
             raise ValueError("limit must be an integer") from None
         count = max(1, min(count, MAX_LIMIT))
-        where, params = _where(agent, agents)
+        where, params = _where(agent, agents, kind, failed)
         rows = self._db.execute(
             f"SELECT * FROM posts{where} ORDER BY id DESC LIMIT ?", [*params, count]
         ).fetchall()
         return [Post(**dict(row)) for row in rows]
+
+    def kinds(self) -> list[str]:
+        """Every kind the feed has posts of, in the vocabulary's order."""
+        have = {str(row["kind"]) for row in self._db.execute("SELECT DISTINCT kind FROM posts")}
+        return [kind for kind in KINDS if kind in have]
 
     def agents(self) -> list[str]:
         """Every agent that has posted, most recent first."""
@@ -387,8 +409,10 @@ class Store:
         row = self._db.execute("SELECT 1 FROM posts WHERE link = ? LIMIT 1", (link,)).fetchone()
         return row is not None
 
-    def count(self, *, agents: Iterable[str] | None = None) -> int:
-        """How many posts, optionally from these agents only."""
-        where, params = _where(None, agents)
+    def count(
+        self, *, agents: Iterable[str] | None = None, kind: str | None = None, failed: bool = False
+    ) -> int:
+        """How many posts, optionally narrowed as `list` narrows them."""
+        where, params = _where(None, agents, kind, failed)
         row = self._db.execute(f"SELECT COUNT(*) AS n FROM posts{where}", params).fetchone()
         return int(row["n"])

@@ -206,9 +206,30 @@ font size, so they grow when you zoom Tern's text.
 The top strip carries the live dot, each agent's handle with its count for
 today (tap one to filter; a filter searches the whole feed, and a selected
 handle stays so it can always be cleared), `✗ N failed today` when anything
-failed, and the post count. Day dividers ("today", "yesterday", "oct 7")
-break up the feed. New posts rise in at the top, their avatar popping in;
-`q` leaves.
+failed (tap it to show only failed posts), the post count, and `?` for the
+keys. A post's kind word filters to that kind; an active kind filter shows
+as its own chip, tap it to clear. Day dividers ("today", "yesterday",
+"oct 7") break up the feed. New posts rise in at the top, their avatar
+popping in.
+
+### Keys
+
+| Key | What it does |
+| --- | --- |
+| `j` `k` (or `↓` `↑`) | move the cursor down and up; the first press lands on the top post |
+| `g` `G` (or Home, End) | the top post, the bottom post |
+| `enter` (or `o`), `c`, `s` | open, copy, share the cursor's post |
+| `1`–`9` | filter by the strip's first nine handles (again to unfilter) |
+| `t` `T` | show one kind, stepping through results first (session, pr, merge, deploy), then every kind again |
+| `x` | failed posts only |
+| `0` | clear every filter |
+| `?` | the key legend, with each handle's number |
+| `esc` | one step back: the legend, then the filters, then the cursor, then leave |
+| `q`, `ctrl+c` | leave |
+
+The cursor's post is marked with an accent edge and shows its actions. It
+stays on its post as new posts land, and moves to the nearest one still
+shown when a filter hides it.
 
 **Share** opens `https://x.com/intent/tweet?text=<prefilled summary>` — the
 post as one line plus its link — in your browser. No X API and no keys: you
@@ -268,7 +289,7 @@ Tern pane ⇄ Surface Protocol ⇄ feed surface ⇄ SQLite ⇄ agent hooks / MCP
 | `src/feed_block/gitutil.py` | Read-only git plumbing: roots, branches, diffs, commit links |
 | `src/feed_block/labels.py` | Handles, with session numbers when an agent ran several that day |
 | `src/feed_block/views.py` | The timeline as native nodes: avatars, cards, handles, dividers, strip |
-| `src/feed_block/surface.py` | The live pane: the session loop, the watcher, the actions |
+| `src/feed_block/surface.py` | The live pane: the session loop, the watcher, the keys, the filters, the actions |
 | `src/feed_block/design.py`, `styles/feed.css` | The console-idiom stylesheet and its light/dark palette |
 | `src/feed_block/agents.py` | Which agent and session is running a command, from its environment |
 | `src/feed_block/colors.py` | Agent hues, their display names and kind glyphs, stable from a name alone |

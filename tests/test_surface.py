@@ -8,6 +8,7 @@ import threading
 import time
 
 import pytest
+from tern_sdk import Key
 from tern_sdk import session as session_mod
 
 from feed_block import surface as surface_mod
@@ -183,5 +184,175 @@ def test_a_new_post_lands_live_without_a_restart(tmp_path):
         thread.join(timeout=5)
         assert not thread.is_alive()
         assert feed.exit
+    finally:
+        term.close()
+
+
+# ---------------------------------------------------------------------------
+# the keyboard
+
+
+class FakeSurface:
+    """Records what the pane would draw and where it would scroll."""
+
+    def __init__(self) -> None:
+        self.page: dict = {}
+        self.revealed: list[tuple[str, str]] = []
+
+    def render(self, **page) -> None:
+        self.page = page
+
+    def reveal(self, id: str, at: str = "nearest") -> None:
+        self.revealed.append((id, at))
+
+    def stylesheet(self, name: str, css: str | None) -> None:
+        pass
+
+
+def keyed(store) -> Feed:
+    feed = Feed(None, store)
+    feed.surface = FakeSurface()
+    feed.render()
+    return feed
+
+
+def press(feed: Feed, *names: str, **mods) -> None:
+    for name in names:
+        feed.input(Key(name, **mods))
+        if feed.dirty:
+            feed.render()
+            feed.dirty = False
+
+
+def test_j_and_k_move_the_cursor_and_scroll_to_it(store):
+    first, second, third = (post(store, title=f"post {n}") for n in range(3))
+    feed = keyed(store)
+    press(feed, "j")
+    assert feed.cursor == third.id  # the first move lands on the top post
+    assert feed.surface.revealed[-1] == ("main.feed.strip", "start")
+    press(feed, "j", "down")
+    assert feed.cursor == first.id
+    assert feed.surface.revealed[-1] == (f"main.feed.p{first.id}", "nearest")
+    press(feed, "j")
+    assert feed.cursor == first.id  # the bottom holds
+    press(feed, "k")
+    assert feed.cursor == second.id
+    press(feed, "g", shift=True)
+    assert feed.cursor == first.id
+    press(feed, "g")
+    assert feed.cursor == third.id
+
+
+def test_enter_c_and_s_act_on_the_cursors_post(store, monkeypatch):
+    opened, copied = [], []
+    monkeypatch.setattr(surface_mod, "open_url", lambda url: opened.append(url) or True)
+    monkeypatch.setattr(surface_mod, "clipboard", lambda text: copied.append(text) or True)
+    post(store, title="older", link="https://x.test/older")
+    post(store, title="newer", link="https://x.test/newer")
+    feed = keyed(store)
+    press(feed, "enter")
+    assert feed.toast == ("no post selected", "j or k picks one") and opened == []
+    press(feed, "j", "j", "enter", "c", "s")
+    assert opened[0] == "https://x.test/older" and opened[1].startswith("https://x.com/intent/tweet")
+    assert copied == ["older\nhttps://x.test/older"]
+
+
+def test_number_keys_t_and_x_filter_and_0_clears(store):
+    post(store, agent="hermes", kind="pr")
+    post(store, agent="codex", kind="deploy", status="failed")
+    post(store, agent="codex", kind="session", title="summary")
+    feed = keyed(store)
+    assert feed.agents == ["codex", "hermes"]
+    press(feed, "2")
+    assert feed.selected == {"hermes"} and [p.agent for p in feed.posts] == ["hermes"]
+    press(feed, "0")
+    assert not feed.filtering
+    press(feed, "t")
+    assert feed.kind == "session"  # results first
+    press(feed, "t")
+    assert feed.kind == "pr"
+    press(feed, "t", shift=True)
+    assert feed.kind == "session"
+    press(feed, "0", "x")
+    assert feed.failed_only and [p.kind for p in feed.posts] == ["deploy"]
+
+
+def test_t_cycles_back_to_every_kind(store):
+    post(store, kind="pr")
+    feed = keyed(store)
+    press(feed, "t")
+    assert feed.kind == "pr"
+    press(feed, "t")
+    assert feed.kind is None
+
+
+def test_the_cursor_follows_its_post_through_a_filter(store):
+    keep = post(store, agent="hermes", title="kept")
+    post(store, agent="codex", title="filtered out")
+    feed = keyed(store)
+    press(feed, "j")  # codex's post, on top
+    press(feed, "1")  # codex, the newest, is the first handle
+    assert [p.agent for p in feed.posts] == ["codex"]
+    press(feed, "0", "j")
+    assert feed.cursor == keep.id
+    press(feed, "1")  # codex only: the cursor's post is gone, so it moves to what is shown
+    assert feed.cursor == feed.posts[0].id
+
+
+def test_escape_steps_back_before_it_leaves(store):
+    post(store, status="failed")
+    feed = keyed(store)
+    press(feed, "?", "x", "j")
+    assert feed.keys and feed.failed_only and feed.cursor is not None
+    press(feed, "escape")
+    assert not feed.keys and not feed.exit
+    press(feed, "escape")
+    assert not feed.filtering and feed.cursor is not None
+    press(feed, "escape")
+    assert feed.cursor is None and not feed.exit
+    press(feed, "escape")
+    assert feed.exit
+
+
+def test_q_and_ctrl_c_leave_at_once(store):
+    feed = keyed(store)
+    press(feed, "x", "q")
+    assert feed.exit
+    feed = keyed(store)
+    press(feed, "c", ctrl=True)
+    assert feed.exit
+
+
+def test_keys_reach_the_live_pane(tmp_path):
+    """Over a real session: j marks a post, ? opens the legend, q leaves."""
+    db = tmp_path / "feed.db"
+    with Store(db) as seeder:
+        seeder.post(agent="hermes", kind="pr", title="the first post")
+    term = Term()
+    try:
+        term.reply()
+        term.da1()
+        session = session_mod.start(term.in_r, term.out_w, app="feed-block", timeout=1.0)
+        assert session is not None
+        term.read()
+        done: list = []
+
+        def run_pane() -> None:
+            with Store(db) as store:
+                feed = Feed(session, store)
+                done.append(feed)
+                feed.run()
+
+        thread = threading.Thread(target=run_pane, daemon=True)
+        thread.start()
+        deadline = time.monotonic() + 5
+        assert _wait_for(term, "the first post", deadline)
+        term.key("j")
+        assert _wait_for(term, "fb-cursor", deadline), "the cursor never reached the pane"
+        term.key("?")
+        assert _wait_for(term, "enter open", deadline), "the key legend never opened"
+        term.key("q")
+        thread.join(timeout=5)
+        assert not thread.is_alive() and done[0].exit
     finally:
         term.close()

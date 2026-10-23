@@ -49,8 +49,21 @@
 [data-role='chip-on'] { color: var(--fb-agent, var(--fb-ink)); font-weight: 600;
   background: color-mix(in srgb, var(--fb-agent, var(--fb-ink)) 20%, transparent); }
 [data-role='chip'] + [data-role^='chip'], [data-role='chip-on'] + [data-role^='chip'] { margin-left: 2px; }
-[data-role='strip'] .sf-text[data-role='failed-today'] { color: var(--fb-bad); }
+/* failed today is the failed-only switch; on, it is a pill in the failure's hue */
+[data-role='strip'] .sf-text[data-role='failed-today'] { color: var(--fb-bad); cursor: pointer; }
+[data-role='strip'] .sf-text[data-role='failed-on'] { color: var(--fb-bad); font-weight: 600; cursor: pointer;
+  padding: 0 6px; margin: 0 -6px; border-radius: 5px;
+  background: color-mix(in srgb, var(--fb-bad) 16%, transparent); }
+/* a kind filter: a pill in the accent, since no agent owns it */
+.fb-kind[data-role='chip-on'] { --fb-agent: var(--fb-accent); }
 [data-role='count'] { flex: 1 1 auto; text-align: right; }
+[data-role='strip'] .sf-text[data-role='keys-hint'] { cursor: pointer; padding: 0 4px; margin-right: -4px;
+  color: var(--fb-faint); }
+[data-role='strip'] .sf-text[data-role='keys-hint']:hover { color: var(--fb-ink); }
+/* the key legend: one faint line under the strip, `?` opens it */
+.sf.sf-row[data-role='keys'] { flex-wrap: wrap; gap: 0 14px; padding: 6px 0;
+  box-shadow: inset 0 -1px 0 var(--fb-line); }
+[data-role='keys'] .sf-text { font: inherit; line-height: var(--fb-lh); color: var(--fb-faint); white-space: nowrap; }
 @keyframes fb-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 /* ---------- a post: two columns, the avatar and the content; a hairline under it */
@@ -61,6 +74,10 @@
 .fb-cont[data-role^='post'] { padding-top: 4px; }
 /* a thread continues right below: no hairline under the post above it */
 .fb-joined[data-role^='post'] { box-shadow: none; }
+/* the keyboard's post: an accent edge in the gutter and a soft wash; its actions show */
+.fb-cursor[data-role^='post'] { background: color-mix(in srgb, var(--fb-accent) 7%, transparent);
+  box-shadow: inset 2px 0 0 var(--fb-accent), inset 0 -1px 0 var(--fb-line); }
+.fb-cursor.fb-joined[data-role^='post'] { box-shadow: inset 2px 0 0 var(--fb-accent); }
 /* the avatar column: fixed on every post; a continuation keeps it, empty.
    Sizes follow the pane's line height and font size, so they grow with it */
 [data-role='gutter'] { flex: 0 0 auto; width: calc(2 * var(--fb-lh)); align-self: stretch; }
@@ -96,6 +113,9 @@
 [data-role='name'] { color: var(--fb-agent, var(--fb-ink)); font-weight: 650; }
 [data-role='handle'] { color: var(--fb-muted); }
 [data-role='time'], [data-role='kind'] { color: var(--fb-faint); }
+/* the kind word filters the feed to that kind */
+[data-role='head'] .sf-text[data-role='kind'] { cursor: pointer; }
+[data-role='head'] .sf-text[data-role='kind']:hover { color: var(--fb-ink); }
 [data-role='name'] + [data-role='handle'] { margin-left: calc(2 * var(--fb-cw)); }
 [data-role='handle'] + [data-role='time']::before,
 [data-role='kind']::before { content: '·'; margin: 0 var(--fb-cw); color: var(--fb-faint); }
@@ -131,7 +151,8 @@
   opacity: 0; transition: opacity 120ms ease; color: var(--fb-faint); }
 [data-role='actions'] .sf-text { font: inherit; color: inherit; line-height: var(--fb-lh); }
 [data-role^='post']:hover [data-role='actions'],
-[data-role^='post']:focus-within [data-role='actions'] { opacity: 1; }
+[data-role^='post']:focus-within [data-role='actions'],
+.fb-cursor[data-role^='post'] [data-role='actions'] { opacity: 1; }
 [data-role='action'] { cursor: pointer; }
 [data-role='action']:hover { color: var(--fb-ink); }
 
