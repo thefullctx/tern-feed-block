@@ -356,3 +356,15 @@ def test_keys_reach_the_live_pane(tmp_path):
         assert not thread.is_alive() and done[0].exit
     finally:
         term.close()
+
+
+def test_filters_and_the_legend_bring_the_strip_into_view(store):
+    """A moved cursor can scroll the strip away; what changes in it scrolls it back."""
+    for n in range(3):
+        post(store, title=f"post {n}", status="failed")  # every filter below keeps them all
+    feed = keyed(store)
+    for key in ("t", "x", "?", "0", "1"):
+        press(feed, "j", "j")
+        assert feed.surface.revealed[-1][1] == "nearest"
+        press(feed, key)
+        assert feed.surface.revealed[-1] == ("main.feed.strip", "start"), key

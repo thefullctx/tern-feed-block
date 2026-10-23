@@ -275,6 +275,12 @@ class Feed:
     def filtering(self) -> bool:
         return bool(self.selected or self.kind or self.failed_only)
 
+    def _changed(self) -> None:
+        """A filter or the legend changed: both show in the strip, so the strip comes
+        into view (a moved cursor may have scrolled it away)."""
+        self._reveal = ("main.feed.strip", "start")
+        self.dirty = True
+
     # -- filters
 
     def toggle(self, agent: str) -> None:
@@ -282,12 +288,12 @@ class Feed:
             self.selected.discard(agent)
         else:
             self.selected.add(agent)
-        self.dirty = True
+        self._changed()
 
     def toggle_kind(self, kind: str) -> None:
         """Shows only this kind, or every kind again when it is the one shown."""
         self.kind = None if self.kind == kind else kind
-        self.dirty = True
+        self._changed()
 
     def step_kind(self, step: int) -> None:
         """`t`: the next kind the feed has (`T` the previous), then every kind again."""
@@ -295,22 +301,22 @@ class Feed:
         cycle = [None, *(kind for kind in KIND_ORDER if kind in have)]
         at = cycle.index(self.kind) if self.kind in cycle else 0
         self.kind = cycle[(at + step) % len(cycle)]
-        self.dirty = True
+        self._changed()
 
     def toggle_failed(self) -> None:
         self.failed_only = not self.failed_only
-        self.dirty = True
+        self._changed()
 
     def clear(self) -> None:
         """Every filter off: all agents, every kind, failed or not."""
         self.selected.clear()
         self.kind = None
         self.failed_only = False
-        self.dirty = True
+        self._changed()
 
     def toggle_keys(self) -> None:
         self.keys = not self.keys
-        self.dirty = True
+        self._changed()
 
     # -- actions
 
