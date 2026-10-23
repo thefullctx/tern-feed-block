@@ -72,11 +72,13 @@ Results, not activity, so a day of several agents fits on one screen:
 1. **One summary per session**, once the session changed something in a
    repository: the agent's own one-line account of what it did (its first
    statement; a question back to you is skipped), the repo and branch,
-   `+adds −dels` since the session started, and the commit count. It is
+   `+adds −dels` of the session's own commits and of what it has not
+   committed yet (new files included), and its commit count. Commits it only
+   pulled or merged in are not its work, so they are not counted. It is
    replaced, and moves to the top, only when the work changes: a reply that
    only talks leaves it where it is, so a session is always one post. It
    turns red when the session's last test run failed, read from the runner's
-   own count, so `pytest | tail` still counts.
+   own final count, so `pytest | tail` still counts.
 2. **A PR opened** (`gh pr create`), with its link.
 3. **A PR merged** (`gh pr merge`, or a merge through the git hooks).
 4. **A deploy** (`fly deploy`, `vercel --prod`, `wrangler deploy` and the
@@ -87,8 +89,9 @@ their own, and a session that changed nothing posts nothing. Nothing about
 your prompts or the conversation is posted: only the agent's closing
 sentence, and a test runner's failure count.
 
-When one agent runs two sessions on the same day, its handle is numbered:
-`@omp¹`, `@omp²`. With one session, it stays `@omp`.
+When one agent runs two sessions on the same day, its handle is numbered
+in the order the sessions began: `@omp¹`, `@omp²`. With one session, it
+stays `@omp`.
 
 Sessions working in one checkout share its diff: git cannot tell whose line
 is whose. Agents in separate worktrees each get their own.
@@ -143,7 +146,7 @@ sessions of one agent are told apart.
 ```sh
 feed                     # inside Tern: the timeline; anywhere else: plain text
 feed post --agent hermes --kind pr --title "pushed PR #42 to handover" \
-    --repo handover --link https://github.com/you/handover/pull/42 --add 120 --del 34
+    --repo handover --branch offline --link https://github.com/you/handover/pull/42 --add 120 --del 34
 feed list                # recent posts, newest first, grouped by day
 feed list --agent codex --json
 feed --install           # set up the agents on this machine (--uninstall undoes it)
@@ -154,7 +157,8 @@ feed --mcp               # the MCP server itself (agents call this)
 Without `--agent`, the post is named after the agent running the command:
 `FEED_BLOCK_AGENT` when set, else the agent's own marker (Claude Code, Codex,
 OMP and pi are recognized; Hermes sets none yet, so name it with
-`FEED_BLOCK_AGENT`). The database defaults to
+`FEED_BLOCK_AGENT`), and it carries the agent's session when the agent
+exposes one, so it threads with that session's other posts. The database defaults to
 `~/.feed-block/feed.db` and `FEED_BLOCK_DB` overrides it (tests use this).
 
 ## The surface
@@ -234,7 +238,9 @@ feed hook install              # in a repository (or --repo PATH)
 feed hook install --uninstall  # restores any hook it replaced
 ```
 
-- `post-merge` posts the merge, and
+- `post-merge` posts a merge you made here (`git merge`; not a pull, and
+  not the base-branch update `gh pr merge` does, which the agent's own merge
+  post already covers), and
 - `post-commit` posts each commit, only with `[git] commits = true`,
 
 with the agent running git as the handle (detected as above, else the git
@@ -242,7 +248,8 @@ author), the repository, the branch, and a commit link when the `origin`
 remote is on GitHub, GitLab or Bitbucket. A commit is posted once per link,
 and an amend or a rebase in progress is skipped. Worktrees and
 `core.hooksPath` are honored, and the hooks call the `feed` of the install
-that wrote them. `FEED_BLOCK=0` disables them without uninstalling.
+that wrote them. `FEED_BLOCK=0` disables them without uninstalling. If you
+replace one of feed-block's hooks yourself, `--uninstall` leaves yours alone.
 
 ## Architecture
 
@@ -307,6 +314,10 @@ your own feed), opens a pane, runs `feed`, and shoots both themes. Copy
   `~/.feed-block/feed.db` is the whole system.
 - The commit link is derived for GitHub, GitLab and Bitbucket remotes; other
   hosts post without a link, and a link-free commit cannot be deduplicated.
+- A session's own commits are told apart by HEAD's reflog (commits,
+  amends, cherry-picks, rebase picks). Without a reflog, every commit since
+  the session began counts. Untracked files count by their lines, up to
+  500 files of 1 MB; binary and ignored files do not.
 - Automatic posts need the agent's hooks (Claude Code) or extensions (OMP, pi).
   Hermes has hooks too, but each one needs approving in Hermes, so it posts
   through MCP for now. Outside a git repository, a session posts only PRs and

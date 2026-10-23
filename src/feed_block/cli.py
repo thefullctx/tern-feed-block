@@ -22,7 +22,7 @@ from . import gitutil
 from .gitutil import commit_url, numstat, repo_root
 from .gitutil import run as _git
 from .mcp_server import receipt
-from .labels import handle, session_numbers
+from .labels import handle, numbers_for
 from .reltime import day_label, relative
 from .store import DEFAULT_LIMIT, KINDS, STATUSES, Post, Store, default_db_path
 
@@ -78,7 +78,17 @@ def rewriting(root: Path) -> bool:
     return action.startswith("commit (amend)")
 
 
-def run_hook(name: str, store: Store) -> int:
+def merging(root: Path, args: list[str]) -> bool:
+    """Whether a post-merge hook follows a merge made here: `git merge`, not a pull
+    (git runs post-merge for every pull, fast-forwards included) or a squash, which
+    has not committed anything yet."""
+    if args[:1] == ["1"]:
+        return False  # --squash: the merge is only staged
+    action = _git(["reflog", "-1", "--format=%gs", "HEAD"], root) or ""
+    return action.startswith("merge ")
+
+
+def run_hook(name: str, store: Store, args: list[str] | None = None) -> int:
     """`feed hook run`: what a git hook calls. Idempotent per commit link."""
     if name not in HOOKS:
         print(f"feed: unknown hook {name!r}", file=sys.stderr)
@@ -89,6 +99,8 @@ def run_hook(name: str, store: Store) -> int:
     settings = config.load()
     if name == "post-merge" and not settings.posts_enabled("merge"):
         return 0  # [posts] merge = false switches merges off, from agents and git alike
+    if name == "post-merge" and not merging(root, args or []):
+        return 0  # a pull, or `gh pr merge` updating the base branch: not a merge made here
     if name == "post-commit" and not settings.git_commits:
         return 0  # merges only, unless [git] commits = true: commits count into session summaries
     if name == "post-commit" and rewriting(root):
@@ -142,12 +154,16 @@ def install_hooks(repo: Path, *, uninstall: bool = False) -> list[str]:
         target = hooks / name
         backup = target.with_name(f"{name}.before-feed-block")
         if uninstall:
-            if backup.exists():
+            ours = target.is_file() and HOOK_MARKER in target.read_text()
+            if backup.exists() and (ours or not target.exists()):
                 backup.replace(target)
                 done.append(f"restored {name} from its backup")
-            elif target.is_file() and HOOK_MARKER in target.read_text():
+            elif ours:
                 target.unlink()
                 done.append(f"removed {name}")
+            elif backup.exists():
+                # Someone replaced feed-block's hook since: theirs stays, and so does the backup.
+                done.append(f"{name}: changed since install, left as it is (and {backup.name})")
             else:
                 done.append(f"{name}: nothing installed")
             continue
@@ -181,13 +197,13 @@ def plain_post(post: Post, width: int, numbers: dict[int, int] | None = None) ->
     return f"{line}\n{indent}{detail}" if detail else line
 
 
-def plain_feed(posts: list[Post], store: Store | None = None) -> str:
+def plain_feed(posts: list[Post], store: Store | None = None, *, header: bool = True) -> str:
     """Recent posts as console text: the feed without Tern."""
     if not posts:
         return "feed-block: the feed is empty. Post with: feed post --agent you --kind note --title …"
-    where = f" · {store.count()} posts · {store.path}" if store else ""
+    where = f" · {store.count()} posts · {store.path}" if store and header else ""
     blocks = [f"feed-block{where}"]
-    numbers = session_numbers(posts)
+    numbers = numbers_for(posts, store)
     width = max(len(handle(post, numbers)) for post in posts)
     days: dict[str, list[Post]] = {}
     for post in posts:
@@ -239,6 +255,8 @@ def cmd_post(args: argparse.Namespace) -> int:
             additions=args.additions,
             deletions=args.deletions,
             status=args.status,
+            branch=args.branch,
+            session=agents.session(),
         )
     print(receipt(made))
     return 0
@@ -250,7 +268,9 @@ def cmd_list(args: argparse.Namespace) -> int:
         if args.json:
             print(json.dumps([post.dict() for post in posts], ensure_ascii=False, indent=2))
         elif args.agent:
-            print(plain_feed(posts) if posts else f"feed-block: no posts from {args.agent}")
+            print(
+                plain_feed(posts, store, header=False) if posts else f"feed-block: no posts from {args.agent}"
+            )
         else:
             print(plain_feed(posts, store))
     return 0
@@ -264,12 +284,14 @@ def cmd_hook(args: argparse.Namespace) -> int:
             return 2
         for line in install_hooks(repo, uninstall=args.uninstall):
             print(line)
-        verb = "Uninstalled from" if args.uninstall else "Installed in"
-        print(f"{verb} {repo}. Commits and merges now post to the feed.")
+        if args.uninstall:
+            print(f"Uninstalled from {repo}.")
+        else:
+            print(f"Installed in {repo}. Merges made here now post (commits too, with [git] commits = true).")
         return 0
     if args.hook_cmd == "run":
         with Store() as store:
-            return run_hook(args.name, store)
+            return run_hook(args.name, store, args.rest)
     print("feed: hook needs install or run", file=sys.stderr)
     return 2
 
@@ -385,6 +407,7 @@ def build_parser() -> argparse.ArgumentParser:
     post.add_argument("--title", required=True, help="one line, e.g. 'pushed PR #42 to handover'")
     post.add_argument("--body", default="")
     post.add_argument("--repo")
+    post.add_argument("--branch")
     post.add_argument("--link")
     post.add_argument("--add", "--additions", dest="additions", type=int)
     post.add_argument("--del", "--deletions", dest="deletions", type=int)

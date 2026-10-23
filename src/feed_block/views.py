@@ -273,11 +273,14 @@ def feed_view(
     now: float | None = None,
     counts: tuple[int, int] | None = None,
     today: tuple[dict[str, int], int] | None = None,
+    numbers: dict[int, int] | None = None,
 ) -> dict:
     """The pane: the strip over the timeline, filtered by the selected agents.
 
     `counts` is (matching, total) and `today` is (posts per agent, failed posts)
     across the whole store; without them the strip counts the posts it was given.
+    `numbers` are the session numbers from the whole store (`labels.numbers_for`);
+    without them they come from the posts shown.
     """
     now = time.time() if now is None else now
     agents = agents_of(posts) if agents is None else list(agents)
@@ -296,7 +299,7 @@ def feed_view(
             )
         )
     else:
-        numbers = labels.session_numbers(shown)
+        numbers = labels.session_numbers(shown) if numbers is None else numbers
         groups: dict[str, tuple[str, list[Post]]] = {}
         for post in shown:
             key = day_key(post.created_at).isoformat()

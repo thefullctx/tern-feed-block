@@ -257,14 +257,9 @@ def serve(instream: IO[str], outstream: IO[str], store: Store | None = None) -> 
             try:
                 frames = json.loads(line)
             except json.JSONDecodeError as exc:
-                reply = _error(None, PARSE_ERROR, f"parse error: {exc.msg}")
-                frames = None
+                replies = [_error(None, PARSE_ERROR, f"parse error: {exc.msg}")]
             else:
-                reply = None
-            if frames is None:
-                replies = [reply]
-            else:
-                replies = handle_frames(frames, store)
+                replies = handle_frames(frames, store)  # `null` too: an invalid request
             for reply in replies:
                 outstream.write(json.dumps(reply, ensure_ascii=False) + "\n")
                 outstream.flush()
