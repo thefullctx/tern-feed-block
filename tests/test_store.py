@@ -174,3 +174,15 @@ def test_an_older_feed_gains_the_new_columns(tmp_path):
         assert (old.title, old.branch, old.session) == ("old", None, None)
         made = store.post(agent="omp", kind="session", title="new", branch="main", session="s1")
         assert (made.branch, made.session) == ("main", "s1")
+
+
+def test_list_and_count_narrow_by_kind_and_failure(tmp_path):
+    with Store(tmp_path / "feed.db") as store:
+        store.post(agent="omp", kind="pr", title="a")
+        store.post(agent="omp", kind="deploy", title="b", status="failed")
+        store.post(agent="codex", kind="deploy", title="c")
+        assert [p.title for p in store.list(kind="deploy")] == ["c", "b"]
+        assert [p.title for p in store.list(failed=True)] == ["b"]
+        assert [p.title for p in store.list(agents={"codex"}, kind="deploy")] == ["c"]
+        assert store.count(kind="deploy", failed=True) == 1
+        assert store.kinds() == ["pr", "deploy"]  # the vocabulary's order, only kinds with posts

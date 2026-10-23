@@ -7,6 +7,9 @@ hover or focus only), the title, a muted body and the card (repo · branch,
 the short reference, the diff bar), sized to its content. A hairline closes
 every post but one: a session posting again right below itself continues the
 thread instead, under the same avatar column, until its last post.
+
+The keyboard's cursor marks one post; filters (agents, one kind, failed only)
+show as chips in the strip, each one click from cleared.
 """
 
 from __future__ import annotations
@@ -28,6 +31,16 @@ NUMBER = re.compile(r"(?:#|/pull/|/issues/|/merge_requests/)(\d+)")
 # A commit page on GitHub, GitLab or Bitbucket.
 COMMIT = re.compile(r"/commits?/([0-9a-f]{7,40})\b")
 EMPTY = "the feed is empty · post with `feed post --agent you --kind note --title …` or the MCP `post` tool"
+FILTERED = "no posts match the filters · 0 or esc clears them"
+# The keys, as the legend under the strip lists them (`?` shows it).
+KEYS = (
+    ("j k", "move"), ("g G", "top, bottom"), ("enter", "open"), ("c", "copy"), ("s", "share"),
+    ("1–9", "agent"), ("t T", "kind"), ("x", "failed"), ("0", "clear"), ("q", "quit"),
+)  # fmt: skip
+
+
+def _ignore(*_: object) -> None:
+    return None
 
 
 @dataclass
@@ -38,6 +51,18 @@ class Handlers:
     copy: Callable[[Post], object]
     share: Callable[[Post], object]
     toggle: Callable[[str], object]
+    kind: Callable[[str], object] = _ignore  # show only this kind, or every kind again
+    failed: Callable[[], object] = _ignore  # failed posts only, or all again
+    keys: Callable[[], object] = _ignore  # the key legend, shown or hidden
+
+
+def matches(post: Post, selected: set[str], kind: str | None, failed: bool) -> bool:
+    """Whether a post passes the filters: one of the selected agents, the kind, failed."""
+    return (
+        (not selected or post.agent in selected)
+        and (kind is None or post.kind == kind)
+        and (not failed or post.failed)
+    )
 
 
 def number(link: str | None) -> str | None:
@@ -139,6 +164,7 @@ def post_node(
     handle: str | None = None,
     continued: bool = False,
     joined: bool = False,
+    cursor: bool = False,
 ) -> ui.Node:
     """One post: an avatar with its kind badge, beside the head line, title, body and card.
 
@@ -146,6 +172,7 @@ def post_node(
     empty avatar column but no avatar, so its text lines up under the post
     above. `joined` is the mirror image — the post below is continued — and
     drops the hairline under this post, so the thread reads as one unit.
+    `cursor` is the keyboard's post: marked, with its actions showing.
     """
     classes = [colors.agent_class(post.agent)]
     if post.failed:
@@ -156,12 +183,19 @@ def post_node(
         classes.append("fb-cont")
     if joined:
         classes.append("fb-joined")
+    if cursor:
+        classes.append("fb-cursor")
     head = []
     if not continued:
         head.append(ui.html.span(colors.display_name(post.agent), role="name", key="n"))
         head.append(ui.html.span(handle or f"@{post.agent}", role="handle", key="h"))
     head.append(ui.text(relative(post.created_at, now), role="time", key="t"))
-    head.append(ui.text(post.kind, role="kind", key="k"))
+    head.append(
+        ui.text(
+            post.kind, role="kind", key="k", title=f"show only {post.kind} posts",
+            on_click=lambda _, k=post.kind: handlers.kind(k),
+        )
+    )  # fmt: skip
     actions = []
     if post.link:
         actions.append(_action("↗ open", "open the link", lambda p=post: handlers.open(p), "open"))
@@ -215,31 +249,64 @@ def strip(
     live: bool,
     handlers: Handlers,
     today: tuple[dict[str, int], int] = ({}, 0),
+    *,
+    kind: str | None = None,
+    failed_only: bool = False,
+    numbered: bool = False,
 ) -> ui.Node:
     """The top strip: the live dot, the wordmark, agent handles as filters, today's counts.
 
-    `today` is (posts per agent today, failed posts today).
+    `today` is (posts per agent today, failed posts today). A kind filter shows as
+    its own chip; `✗ N failed today` is the failed-only switch. `numbered` puts each
+    handle's number key in front of it, while the key legend is open.
     """
     per_agent, failed = today
     chips = [
         ui.html.span(
-            f"@{agent}" + (f" {per_agent[agent]}" if per_agent.get(agent) else ""),
+            (f"{index} " if numbered and index <= 9 else "")
+            + f"@{agent}"
+            + (f" {per_agent[agent]}" if per_agent.get(agent) else ""),
             class_=colors.agent_class(agent),
             role="chip-on" if agent in selected else "chip",
             key=f"chip-{colors.slug(agent)}",
             title="filter the feed" if agent not in selected else "remove this filter",
             on_click=lambda _, a=agent: handlers.toggle(a),
         )
-        for agent in agents
+        for index, agent in enumerate(agents, 1)
     ]
+    if kind:
+        chips.append(
+            ui.html.span(
+                f"{colors.glyph(kind)} {kind}", role="chip-on", key="chip-kind", class_="fb-kind",
+                title="show every kind", on_click=lambda _: handlers.kind(kind),
+            )
+        )  # fmt: skip
+    if failed_only:
+        flag = f"✗ {failed} failed today" if failed else "✗ failed only"
+    else:
+        flag = f"✗ {failed} failed today" if failed else ""
     return ui.row(
         ui.text("●", role="live-fresh" if live else "live", key="live"),
         ui.text("feed-block", role="wordmark", key="wordmark"),
         *chips,
-        ui.text(f"✗ {failed} failed today" if failed else "", role="failed-today", key="failed"),
+        ui.text(
+            flag, role="failed-on" if failed_only else "failed-today", key="failed",
+            title="show every post" if failed_only else "show only failed posts",
+            on_click=(lambda _: handlers.failed()) if flag else None,
+        ),
         ui.text(f"{shown}/{total}" if total else "", role="count", key="count"),
+        ui.text("?", role="keys-hint", key="keys-hint", title="keys", on_click=lambda _: handlers.keys()),
         role="strip",
         key="strip",
+    )  # fmt: skip
+
+
+def legend() -> ui.Node:
+    """The keys, one faint line under the strip."""
+    return ui.row(
+        *(ui.text(f"{key} {what}", role="key", key=f"k{i}") for i, (key, what) in enumerate(KEYS)),
+        role="keys",
+        key="keys",
     )
 
 
@@ -274,30 +341,32 @@ def feed_view(
     counts: tuple[int, int] | None = None,
     today: tuple[dict[str, int], int] | None = None,
     numbers: dict[int, int] | None = None,
+    kind: str | None = None,
+    failed_only: bool = False,
+    cursor: int | None = None,
+    keys: bool = False,
 ) -> dict:
     """The pane: the strip over the timeline, filtered by the selected agents.
 
     `counts` is (matching, total) and `today` is (posts per agent, failed posts)
     across the whole store; without them the strip counts the posts it was given.
     `numbers` are the session numbers from the whole store (`labels.numbers_for`);
-    without them they come from the posts shown.
+    without them they come from the posts shown. `kind` and `failed_only` narrow
+    the feed like the selected agents do; `cursor` is the keyboard's post id, and
+    `keys` opens the key legend.
     """
     now = time.time() if now is None else now
     agents = agents_of(posts) if agents is None else list(agents)
     # A selected agent keeps its chip, so a filter can always be cleared.
     agents += sorted(agent for agent in selected if agent not in agents)
-    shown = [post for post in posts if not selected or post.agent in selected]
+    shown = [post for post in posts if matches(post, selected, kind, failed_only)]
     matching, total = counts if counts is not None else (len(shown), len(posts))
     newest = shown[0].id if shown else 0
     body: list[ui.Node] = []
     if not total:
         body.append(ui.text(EMPTY, role="empty", key="empty"))
     elif not shown:
-        body.append(
-            ui.text(
-                "no posts from the selected agents · tap a handle to clear it", role="empty", key="filtered"
-            )
-        )
+        body.append(ui.text(FILTERED, role="empty", key="filtered"))
     else:
         numbers = labels.session_numbers(shown) if numbers is None else numbers
         groups: dict[str, tuple[str, list[Post]]] = {}
@@ -327,6 +396,7 @@ def feed_view(
                             and below
                             and (post.agent, post.session) == (below.agent, below.session)
                         ),
+                        cursor=post.id == cursor,
                     )
                 )
                 above = post
@@ -342,7 +412,11 @@ def feed_view(
                     live,
                     handlers,
                     today if today is not None else today_counts(posts, now),
+                    kind=kind,
+                    failed_only=failed_only,
+                    numbered=keys,
                 ),
+                *([legend()] if keys else []),
                 *body,
                 role="feed",
                 key="feed",
